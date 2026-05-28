@@ -59,3 +59,6 @@ jobs:
 
       - name: Smoke test (stdio MCP)
         run: node scripts/smoke-stdio.mjs
+
+      - name: Smoke test (hosted HTTP MCP + mock Orgo OAuth)
+        run: node scripts/smoke-http.mjs

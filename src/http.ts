@@ -55,6 +55,10 @@ const ORGO_AUTH_BASE_URL = (process.env.ORGO_AUTH_BASE_URL ?? 'https://app.orgo.
 const SCOPES = (process.env.ORGO_OAUTH_SCOPES ?? 'profile email groups roles').trim().split(/\s+/);
 const REQUEST_TIMEOUT_MS = Number(process.env.ORGO_TIMEOUT_MS ?? 30_000);
 const TRUST_PROXY_HOPS = Number(process.env.ORGO_TRUST_PROXY_HOPS ?? 1);
+// Protocol used for OUTBOUND API calls to {tenantHost}/api/v1/*. Always https
+// in production; http is allowed only for local smoke tests against a mock.
+const DOWNSTREAM_PROTOCOL: 'http' | 'https' =
+  process.env.ORGO_DOWNSTREAM_PROTOCOL === 'http' ? 'http' : 'https';
 
 const log = createLogger();
 const metrics = new Metrics();
@@ -72,8 +76,8 @@ app.use(express.json({ limit: '4mb' }));
 function buildTenantConfig(tenantHost: string, bearer: string): OrgoConfig {
   return {
     tenantHost,
-    protocol: 'https',
-    baseUrl: `https://${tenantHost}`,
+    protocol: DOWNSTREAM_PROTOCOL,
+    baseUrl: `${DOWNSTREAM_PROTOCOL}://${tenantHost}`,
     timeoutMs: REQUEST_TIMEOUT_MS,
     auth: { kind: 'oauth', token: bearer },
   };
