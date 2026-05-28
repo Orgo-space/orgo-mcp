@@ -42,8 +42,9 @@ jobs:
       - name: Checkout api-docs into build context
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
+          # api-docs is a public repo, no token required. If it ever becomes
+          # private, add a `token: ${{ secrets.ORGO_API_DOCS_TOKEN }}` here.
           repository: orgo-space/api-docs
-          token: ${{ secrets.ORGO_API_DOCS_TOKEN }}
           path: api-docs
           # Pin to a ref we control. github.event.repository.default_branch is
           # NOT used here because the api-docs branch we want is independent.
