@@ -1,0 +1,115 @@
+# Caddyfile for the hosted Orgo MCP server.
+#
+# Terminates TLS for `*.mcp.orgo.space` (wildcard via ACME-DNS challenge) and
+# reverse-proxies to the Node app on 127.0.0.1:3333.
+#
+# Caddy is chosen over Nginx for one reason: automatic ACME, including DNS-01
+# for wildcard certs — no static cert files to rotate, no certbot cron. The
+# whole TLS lifecycle is the responsibility of one binary.
+#
+# DNS-01 setup (one-time):
+#   - Route53 zone `orgo.space` must allow Caddy to create _acme-challenge
+#     TXT records. Easiest: create an IAM user with TXT-only permissions on
+#     `_acme-challenge.*.mcp.orgo.space` and pass its access keys via env.
+#   - The route53 plugin must be included in the Caddy build (xcaddy build
+#     --with github.com/caddy-dns/route53). The official `caddy:2` image does
+#     NOT include it; use `caddy:2-builder` and add the plugin, or vendor a
+#     prebuilt image.
+#
+# For non-AWS DNS providers, swap `route53` for the matching caddy-dns plugin
+# and adjust env vars accordingly.
+
+{
+	# Global options
+	email infra@orgo.space
+	# Set ORGO_MCP_ACME_ENDPOINT to https://acme-staging-v02.api.letsencrypt.org/directory
+	# when iterating on this Caddyfile to avoid hitting Let's Encrypt rate limits.
+	acme_ca {$ORGO_MCP_ACME_ENDPOINT:https://acme-v02.api.letsencrypt.org/directory}
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# Wildcard cert covers every tenant's mcp subdomain.
+*.mcp.orgo.space {
+	tls {
+		dns route53 {
+			access_key_id {$AWS_ACCESS_KEY_ID}
+			secret_access_key {$AWS_SECRET_ACCESS_KEY}
+			region {$AWS_REGION:eu-central-1}
+		}
+	}
+
+	# Security headers. CORS itself is handled by the Node app (header values
+	# vary per response there); these are response-shaping headers that apply
+	# uniformly.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# MCP traffic is JSON or SSE — no inline scripts ever leave this server
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		# Don't advertise upstream tech
+		-Server
+		-X-Powered-By
+	}
+
+	# Tight request size limit at the edge — MCP messages are small. Defends
+	# the Node process from absurd payloads before they're parsed.
+	request_body {
+		max_size 4MB
+	}
+
+	# Health/metrics: keep public but rate-limit at the edge. Caddy core has no
+	# rate limiter; use the caddy-ratelimit plugin OR move this rate limiting
+	# upstream to an ALB. For v1 we accept the unlimited /metrics scrape — the
+	# endpoint is cheap and we control who has the URL.
+
+	reverse_proxy 127.0.0.1:3333 {
+		# Pass through the original host so the Node app can derive tenant.
+		header_up Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-For {remote_host}
+
+		# Streamable HTTP / SSE: don't buffer responses, don't close on idle.
+		flush_interval -1
+
+		# Generous timeouts for long-running tool calls; the app's per-request
+		# timeout (ORGO_TIMEOUT_MS=30000 by default) is the real bound.
+		transport http {
+			read_timeout 5m
+			write_timeout 5m
+			dial_timeout 5s
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Health endpoint on the apex — used by external uptime monitors that don't
+# know any tenant subdomain. Returns whatever the app says; if the app is down
+# this 502s as expected.
+mcp.orgo.space {
+	tls {
+		dns route53 {
+			access_key_id {$AWS_ACCESS_KEY_ID}
+			secret_access_key {$AWS_SECRET_ACCESS_KEY}
+			region {$AWS_REGION:eu-central-1}
+		}
+	}
+
+	respond /robots.txt "User-agent: *\nDisallow: /" 200 {
+		close
+	}
+
+	reverse_proxy /healthz 127.0.0.1:3333
+
+	respond 404 {
+		body "Use a tenant subdomain: https://mcp.{tenant}.orgo.space/"
+	}
+}

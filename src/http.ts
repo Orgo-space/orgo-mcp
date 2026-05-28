@@ -2,74 +2,87 @@
 /**
  * Hosted MCP server with Streamable HTTP transport + OAuth (delegated to Orgo).
  *
- * Designed to be deployed at a single hostname (e.g. https://mcp.orgo.space)
- * and consumed by remote MCP clients: Claude.ai integrations, Gemini agent
+ * Designed to be deployed at one hostname (e.g. `mcp.{tenant}.orgo.space`) and
+ * consumed by remote MCP clients: Claude.ai integrations, Gemini agent
  * connectors, OpenAI Responses API tool-use, custom agents, etc.
  *
- * Endpoints exposed:
- *   GET  /                                           — landing JSON ({name, version, mcp})
- *   GET  /.well-known/oauth-protected-resource       — RFC 9728 (points at our AS metadata)
- *   GET  /.well-known/oauth-authorization-server     — RFC 8414 (synthesized for Orgo)
+ * Endpoints:
+ *   GET  /                                           — landing JSON
+ *   GET  /healthz                                    — health probe
+ *   GET  /metrics                                    — Prometheus text format
+ *   GET  /.well-known/oauth-protected-resource       — RFC 9728 (per-tenant)
+ *   GET  /.well-known/oauth-authorization-server     — RFC 8414 (per-tenant, synthesized)
  *   POST /mcp                                        — JSON-RPC over Streamable HTTP
- *   GET  /mcp                                        — SSE event stream (resumability)
+ *   GET  /mcp                                        — SSE stream (resumability)
  *   DEL  /mcp                                        — terminate session
  *
- * Auth: every /mcp request MUST carry an `Authorization: Bearer <orgo-oauth-token>`.
+ * Auth: every `/mcp` request MUST carry `Authorization: Bearer <orgo-oauth-token>`.
  * The same token is forwarded to Orgo's REST API as the user's identity.
  *
- * Tenant resolution: a single deployment serves ONE tenant by default,
- * configured via ORGO_TENANT_HOST. For multi-tenant hosting, run one instance
- * per tenant (matches Orgo's own per-tenant subdomain model) OR set
- * ORGO_TENANT_FROM_HOST_PATTERN to derive tenant from the connecting hostname.
+ * Multi-tenancy: tenant is derived from the incoming `Host` header, validated
+ * against a suffix allowlist (SSRF guard), then bound to the session at init.
+ * Subsequent requests on that session must come from the same `sub` AND the
+ * same tenant — or they're rejected with 403.
  *
- * Env vars:
- *   ORGO_TENANT_HOST           (required if not derived) — e.g. acme.orgo.space
- *   ORGO_PUBLIC_BASE_URL       (required) — public URL of THIS mcp server, e.g. https://mcp.orgo.space
- *   ORGO_AUTH_BASE_URL         (default https://app.orgo.space) — Orgo OAuth server base
- *   ORGO_OAUTH_SCOPES          (default "profile email groups roles") — required scopes
- *   PORT                       (default 3333)
- *   HOST                       (default 0.0.0.0)
+ * See README.md "Mode 2" and lib/tenant.ts for the routing rules.
  */
 
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { buildServer } from './server.js';
-import { loadConfig } from './config.js';
+import type { OrgoConfig } from './config.js';
 import { OrgoClient } from './lib/client.js';
 import { OAuthValidator, type TokenIdentity } from './auth/oauth.js';
+import { loadTenantResolverOptions, resolveTenant, type TenantContext } from './lib/tenant.js';
+import { InMemorySessionStore, type SessionStore } from './lib/sessions.js';
+import { Metrics } from './lib/metrics.js';
+import { createLogger } from './lib/logger.js';
 
 declare module 'express-serve-static-core' {
   // eslint-disable-next-line @typescript-eslint/no-empty-interface
   interface Request {
     orgoIdentity?: TokenIdentity;
     orgoBearer?: string;
+    orgoTenant?: TenantContext;
   }
 }
 
 const PORT = Number(process.env.PORT ?? 3333);
 const HOST = process.env.HOST ?? '0.0.0.0';
-const PUBLIC_BASE_URL = process.env.ORGO_PUBLIC_BASE_URL?.replace(/\/$/, '');
 const ORGO_AUTH_BASE_URL = (process.env.ORGO_AUTH_BASE_URL ?? 'https://app.orgo.space').replace(/\/$/, '');
 const SCOPES = (process.env.ORGO_OAUTH_SCOPES ?? 'profile email groups roles').trim().split(/\s+/);
+const REQUEST_TIMEOUT_MS = Number(process.env.ORGO_TIMEOUT_MS ?? 30_000);
+const TRUST_PROXY_HOPS = Number(process.env.ORGO_TRUST_PROXY_HOPS ?? 1);
 
-if (!PUBLIC_BASE_URL) {
-  console.error('ORGO_PUBLIC_BASE_URL is required (e.g. https://mcp.orgo.space).');
-  process.exit(1);
-}
-
-const baseConfig = loadConfig(); // requires ORGO_TENANT_HOST
-const oauth = new OAuthValidator({
-  publicBaseUrl: PUBLIC_BASE_URL,
-  orgoAuthBaseUrl: ORGO_AUTH_BASE_URL,
-  scopes: SCOPES,
-});
+const log = createLogger();
+const metrics = new Metrics();
+const tenantOptions = loadTenantResolverOptions();
+const oauth = new OAuthValidator({ orgoAuthBaseUrl: ORGO_AUTH_BASE_URL, scopes: SCOPES });
+const sessions: SessionStore = new InMemorySessionStore();
+const transports = new Map<string, StreamableHTTPServerTransport>();
 
 const app = express();
+// Trust exactly N proxies in front (default 1 — Caddy or ALB). Trusting `true`
+// is too permissive: it lets any X-Forwarded-For spoof the client IP.
+app.set('trust proxy', TRUST_PROXY_HOPS);
 app.use(express.json({ limit: '4mb' }));
 
-// CORS — Claude.ai and other browser-based clients need this
+function buildTenantConfig(tenantHost: string, bearer: string): OrgoConfig {
+  return {
+    tenantHost,
+    protocol: 'https',
+    baseUrl: `https://${tenantHost}`,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    auth: { kind: 'oauth', token: bearer },
+  };
+}
+
+// ─── CORS ───────────────────────────────────────────────────────────────────
+// Wildcard origin is safe with bearer auth: CORS protects implicit credentials
+// (cookies), not explicit `Authorization` headers. Locking to a fixed origin
+// list would block valid agents we don't know about yet.
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -85,54 +98,100 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── Public landing / health ────────────────────────────────────────────────
-app.get('/', (_req, res) => {
+// ─── Request observability ──────────────────────────────────────────────────
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    const seconds = Number(process.hrtime.bigint() - start) / 1e9;
+    const labels = { path: routeLabel(req.path), method: req.method };
+    metrics.requestsTotal.inc({ ...labels, status: String(res.statusCode) });
+    metrics.requestDuration.observe(labels, seconds);
+  });
+  next();
+});
+
+// Map path to a low-cardinality label. Keeps Prometheus series count finite.
+function routeLabel(path: string): string {
+  if (path.startsWith('/.well-known/')) return path;
+  if (path === '/mcp' || path.startsWith('/mcp/')) return '/mcp';
+  if (path === '/healthz' || path === '/metrics' || path === '/') return path;
+  return 'other';
+}
+
+// ─── Public, unauthenticated endpoints ──────────────────────────────────────
+app.get('/', (req, res) => {
+  const ctx = resolveTenantOr400(req, res, { silent: true });
   res.json({
     name: 'orgo-mcp',
     version: '0.1.0',
     description: 'Hosted Model Context Protocol server for the Orgo API.',
-    tenant: baseConfig.tenantHost,
+    tenant: ctx?.tenantHost ?? null,
+    publicBaseUrl: ctx?.publicBaseUrl ?? null,
     mcp: { transport: 'streamable-http', endpoint: '/mcp' },
     docs: 'https://orgo.space/docs/api-reference',
   });
 });
 
 app.get('/healthz', (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, sessions: sessions.size() });
 });
 
-// ─── OAuth metadata (RFC 8414 + RFC 9728) ───────────────────────────────────
-app.get('/.well-known/oauth-protected-resource', (_req, res) => {
-  res.json(oauth.protectedResourceMetadata());
+app.get('/metrics', (_req, res) => {
+  metrics.activeSessions.set(sessions.size());
+  res.type('text/plain; version=0.0.4').send(metrics.render());
 });
 
-app.get('/.well-known/oauth-authorization-server', (_req, res) => {
-  res.json(oauth.authorizationServerMetadata());
+// OAuth metadata — both per-tenant. Same validator, different publicBaseUrl.
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+  const ctx = resolveTenantOr400(req, res);
+  if (!ctx) return;
+  res.json(oauth.protectedResourceMetadata(ctx.publicBaseUrl));
+});
+
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+  const ctx = resolveTenantOr400(req, res);
+  if (!ctx) return;
+  res.json(oauth.authorizationServerMetadata(ctx.publicBaseUrl));
 });
 
 // ─── Bearer auth middleware ─────────────────────────────────────────────────
-async function requireBearer(req: Request, res: Response, next: NextFunction) {
+async function requireBearerAndTenant(req: Request, res: Response, next: NextFunction) {
+  const ctx = resolveTenantOr400(req, res);
+  if (!ctx) return;
+
   const header = req.header('authorization') ?? '';
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) {
-    unauthorized(res, 'missing_token');
+    unauthorized(res, ctx, 'missing_token');
     return;
   }
   const bearer = match[1].trim();
-  const identity = await oauth.validate(bearer);
-  if (!identity) {
-    unauthorized(res, 'invalid_token');
+  let identity: TokenIdentity | null;
+  try {
+    identity = await oauth.validate(bearer);
+  } catch (e) {
+    metrics.oauthValidations.inc({ result: 'error' });
+    log.error('oauth_validate_unexpected_error', { error: (e as Error).message });
+    res.status(502).json({ error: 'oauth_validate_failed' });
     return;
   }
+  if (!identity) {
+    metrics.oauthValidations.inc({ result: 'invalid' });
+    unauthorized(res, ctx, 'invalid_token');
+    return;
+  }
+  metrics.oauthValidations.inc({ result: 'ok' });
+
+  req.orgoTenant = ctx;
   req.orgoBearer = bearer;
   req.orgoIdentity = identity;
   next();
 }
 
-function unauthorized(res: Response, error: 'missing_token' | 'invalid_token') {
+function unauthorized(res: Response, ctx: TenantContext, error: 'missing_token' | 'invalid_token') {
   res.setHeader(
     'WWW-Authenticate',
-    `Bearer realm="orgo-mcp", error="${error}", resource_metadata="${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource"`,
+    `Bearer realm="orgo-mcp", error="${error}", resource_metadata="${ctx.publicBaseUrl}/.well-known/oauth-protected-resource"`,
   );
   res.status(401).json({
     error,
@@ -143,60 +202,66 @@ function unauthorized(res: Response, error: 'missing_token' | 'invalid_token') {
   });
 }
 
-// ─── MCP Streamable HTTP transport with per-session state ───────────────────
-//
-// Two pieces of session state are kept in lockstep:
-//   - transports[sessionId]    → the SDK transport instance
-//   - sessions[sessionId]      → { ownerSub, client }
-//
-// Identity binding: the OAuth `sub` of the user that initialized a session is
-// pinned at that moment. Every subsequent request on the same sessionId must
-// present a bearer for the SAME sub. This prevents session-ID hijack: even if
-// user B somehow learns user A's sessionId and has their own valid Orgo bearer,
-// B's `sub` will not match A's and the request is rejected with 403.
-//
-// Bearer rotation: the validated bearer from the CURRENT request replaces the
-// OrgoClient's stored credential on every call. So if user A refreshes their
-// token mid-session, outbound calls switch to the new credential immediately;
-// if their token is revoked, the next call fails as it should.
-
-interface SessionState {
-  ownerSub: string;
-  client: OrgoClient;
+function resolveTenantOr400(req: Request, res: Response, opts: { silent?: boolean } = {}): TenantContext | undefined {
+  const proto = req.header('x-forwarded-proto') ?? req.protocol;
+  const result = resolveTenant(req.header('host'), proto, tenantOptions);
+  if (result.ok) return result.context;
+  if (opts.silent) return undefined;
+  res.status(result.status).json({ error: result.error, error_description: result.detail });
+  return undefined;
 }
 
-const transports = new Map<string, StreamableHTTPServerTransport>();
-const sessions = new Map<string, SessionState>();
+// ─── MCP Streamable HTTP transport ──────────────────────────────────────────
+//
+// Session state is pinned at init:
+//   - ownerSub:    OAuth sub of the user who started the session
+//   - tenantHost:  Orgo tenant the session targets
+//   - client:      OrgoClient with the tenant's base URL
+//
+// Every subsequent request on the same sessionId must present a bearer for the
+// same sub AND must arrive at the same tenant hostname. On match, we rotate
+// the OrgoClient's stored credential to the request's current bearer (so an
+// expired-and-refreshed token transparently replaces the old one).
 
 function dropSession(id: string) {
   transports.delete(id);
   sessions.delete(id);
+  metrics.activeSessions.set(sessions.size());
 }
 
-app.post('/mcp', requireBearer, async (req, res) => {
+app.post('/mcp', requireBearerAndTenant, async (req, res) => {
   const sessionId = req.header('mcp-session-id');
   let transport = sessionId ? transports.get(sessionId) : undefined;
 
   if (!transport && isInitializeRequest(req.body)) {
-    const sessionConfig = {
-      ...baseConfig,
-      auth: { kind: 'oauth' as const, token: req.orgoBearer! },
-    };
-    const client = new OrgoClient(sessionConfig);
-    const server = buildServer({ config: sessionConfig, client });
+    const tenantCfg = buildTenantConfig(req.orgoTenant!.tenantHost, req.orgoBearer!);
+    const client = new OrgoClient(tenantCfg);
+    const server = buildServer({ config: tenantCfg, client });
     const ownerSub = req.orgoIdentity!.sub;
+    const tenantHost = req.orgoTenant!.tenantHost;
 
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (id) => {
         transports.set(id, transport!);
-        sessions.set(id, { ownerSub, client });
+        sessions.set(id, {
+          ownerSub,
+          tenantHost,
+          client,
+          transport: transport!,
+          createdAt: Date.now(),
+        });
+        metrics.activeSessions.set(sessions.size());
+        log.info('session_initialized', { sessionId: id, sub: ownerSub, tenantHost });
       },
     });
 
     transport.onclose = () => {
       const id = transport!.sessionId;
-      if (id) dropSession(id);
+      if (id) {
+        dropSession(id);
+        log.info('session_closed', { sessionId: id });
+      }
     };
 
     await server.connect(transport);
@@ -208,15 +273,13 @@ app.post('/mcp', requireBearer, async (req, res) => {
     });
     return;
   } else {
-    // Reuse path — enforce identity binding and rotate the bearer.
     if (!enforceSessionIdentity(req, res, sessionId!)) return;
   }
 
   await transport.handleRequest(req, res, req.body);
 });
 
-// GET /mcp — server-to-client SSE stream
-app.get('/mcp', requireBearer, async (req, res) => {
+app.get('/mcp', requireBearerAndTenant, async (req, res) => {
   const sessionId = req.header('mcp-session-id');
   const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport || !sessionId) {
@@ -227,8 +290,7 @@ app.get('/mcp', requireBearer, async (req, res) => {
   await transport.handleRequest(req, res);
 });
 
-// DELETE /mcp — terminate session
-app.delete('/mcp', requireBearer, async (req, res) => {
+app.delete('/mcp', requireBearerAndTenant, async (req, res) => {
   const sessionId = req.header('mcp-session-id');
   const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport || !sessionId) {
@@ -240,9 +302,9 @@ app.delete('/mcp', requireBearer, async (req, res) => {
 });
 
 /**
- * Verify the request's authenticated `sub` matches the session's owner and,
- * if so, rotate the session's outbound bearer to the request's bearer.
- * Returns false (and writes a response) on mismatch.
+ * Verify (a) the request's sub matches the session's owner, AND (b) the
+ * request's resolved tenant matches the session's tenant. On match, rotate
+ * the OrgoClient's stored credential to the request's current bearer.
  */
 function enforceSessionIdentity(req: Request, res: Response, sessionId: string): boolean {
   const state = sessions.get(sessionId);
@@ -251,9 +313,28 @@ function enforceSessionIdentity(req: Request, res: Response, sessionId: string):
     return false;
   }
   if (state.ownerSub !== req.orgoIdentity!.sub) {
+    metrics.sessionOwnerMismatches.inc();
+    log.warn('session_owner_mismatch', {
+      sessionId,
+      sessionOwner: state.ownerSub,
+      requestSub: req.orgoIdentity!.sub,
+      tenantHost: state.tenantHost,
+    });
     res.status(403).json({
       error: 'session_owner_mismatch',
       error_description: 'This MCP session belongs to a different user.',
+    });
+    return false;
+  }
+  if (state.tenantHost !== req.orgoTenant!.tenantHost) {
+    log.warn('session_tenant_mismatch', {
+      sessionId,
+      sessionTenant: state.tenantHost,
+      requestTenant: req.orgoTenant!.tenantHost,
+    });
+    res.status(403).json({
+      error: 'session_tenant_mismatch',
+      error_description: 'This MCP session was created against a different tenant.',
     });
     return false;
   }
@@ -262,16 +343,12 @@ function enforceSessionIdentity(req: Request, res: Response, sessionId: string):
 }
 
 app.listen(PORT, HOST, () => {
-  // Logs go to stderr so stdout stays clean for any process supervisor that
-  // captures it as protocol output (consistent with the stdio entry).
-  console.error(`[orgo-mcp-http] listening on http://${HOST}:${PORT}`);
-  console.error(`[orgo-mcp-http] public base URL: ${PUBLIC_BASE_URL}`);
-  console.error(`[orgo-mcp-http] tenant: ${baseConfig.tenantHost}`);
-  console.error(`[orgo-mcp-http] orgo OAuth server: ${ORGO_AUTH_BASE_URL}`);
-  console.error(
-    `[orgo-mcp-http] metadata: ${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource | /.well-known/oauth-authorization-server`,
-  );
+  log.info('orgo_mcp_http_started', {
+    port: PORT,
+    host: HOST,
+    orgoAuthBaseUrl: ORGO_AUTH_BASE_URL,
+    singleTenantOverride: tenantOptions.singleTenantHost ?? null,
+    allowedSuffixes: tenantOptions.allowedSuffixes,
+    routingPattern: tenantOptions.hostPattern.source,
+  });
 });
-
-// Token-hashing helper exported for completeness (not used here but useful in tests)
-export const debug = { tokenHash: (t: string) => createHash('sha256').update(t).digest('hex').slice(0, 16) };

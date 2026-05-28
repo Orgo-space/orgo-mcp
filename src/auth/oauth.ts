@@ -23,8 +23,6 @@
 import { createHash } from 'node:crypto';
 
 export interface OAuthOptions {
-  /** Public base URL of *this* MCP server (e.g. https://mcp.orgo.space). Used in metadata documents. */
-  publicBaseUrl: string;
   /** Base URL of the Orgo OAuth server (typically https://app.orgo.space). */
   orgoAuthBaseUrl: string;
   /** Scopes the MCP server advertises as required. */
@@ -54,12 +52,14 @@ export class OAuthValidator {
   /**
    * Returns the document served at /.well-known/oauth-protected-resource.
    * Tells clients which authorization server protects this resource.
+   * `publicBaseUrl` is per-request so a single validator instance can serve
+   * multiple tenants (mcp.acme.orgo.space, mcp.contoso.orgo.space, ...).
    * See: https://datatracker.ietf.org/doc/html/rfc9728
    */
-  protectedResourceMetadata() {
+  protectedResourceMetadata(publicBaseUrl: string) {
     return {
-      resource: this.opts.publicBaseUrl,
-      authorization_servers: [this.opts.publicBaseUrl], // we proxy Orgo's AS metadata
+      resource: publicBaseUrl,
+      authorization_servers: [publicBaseUrl], // we proxy Orgo's AS metadata
       scopes_supported: this.opts.scopes,
       bearer_methods_supported: ['header'],
       resource_documentation: 'https://orgo.space/docs/api-reference',
@@ -71,9 +71,9 @@ export class OAuthValidator {
    * Synthesized to point at Orgo's actual OAuth endpoints because Orgo does
    * not publish this document itself. See: RFC 8414.
    */
-  authorizationServerMetadata() {
+  authorizationServerMetadata(publicBaseUrl: string) {
     return {
-      issuer: this.opts.publicBaseUrl,
+      issuer: publicBaseUrl,
       authorization_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/authorize`,
       token_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/token`,
       userinfo_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/userinfo`,

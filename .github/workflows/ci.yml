@@ -1,0 +1,61 @@
+# CI: typecheck + build on every push and PR.
+#
+# Note: the build step needs an api-docs/ directory at the repo root (used by
+# scripts/build-data.ts). We don't have access to the private api-docs repo
+# from CI by default, so we fall back to the openapi.json snapshot that ships
+# in src/data/ (committed to the package). This keeps PRs runnable without
+# secrets.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Node 20
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (use vendored src/data if api-docs is missing)
+        env:
+          # If a maintainer pushes a branch with an api-docs/ checkout, the
+          # build-data step will use it. Otherwise scripts/build-data.ts errors
+          # out — we handle that by skipping the data-rebuild and using the
+          # already-committed src/data/ as-is.
+          ORGO_DOCS_REPO: ${{ github.workspace }}/api-docs
+        run: |
+          if [ -d "$ORGO_DOCS_REPO" ]; then
+            npm run build
+          else
+            echo "::notice::api-docs/ not vendored in this build context — using committed src/data/ snapshot"
+            npx tsc
+            node -e "const{cpSync,rmSync}=require('node:fs');rmSync('dist/data',{recursive:true,force:true});cpSync('src/data','dist/data',{recursive:true});"
+            node -e "const{chmodSync}=require('node:fs');['dist/index.js','dist/http.js'].forEach(f=>chmodSync(f,0o755));"
+          fi
+
+      - name: Smoke test (stdio MCP)
+        run: node scripts/smoke-stdio.mjs

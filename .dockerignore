@@ -1,0 +1,20 @@
+node_modules
+dist
+.git
+.github
+.idea
+.vscode
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+coverage
+.npm
+.cache
+tmp
+*.tgz
+README.md.bak
+
+# api-docs/ IS NOT ignored — the build stage needs it. Vendor it into the
+# build context before `docker build`, or use a CI step that fetches it.

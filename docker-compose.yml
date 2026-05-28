@@ -1,0 +1,53 @@
+# Local / staging compose stack for the hosted Orgo MCP server.
+#
+# Usage:
+#   1. Vendor or symlink your api-docs/ checkout into ./api-docs (the Dockerfile
+#      copies it during the build stage; .dockerignore deliberately keeps it)
+#   2. `docker compose up --build`
+#   3. Hit http://localhost:3333/ — but for OAuth metadata to be tenant-correct
+#      you need to spoof the Host header:
+#        curl -H 'host: mcp.acme.orgo.space' http://localhost:3333/.well-known/oauth-authorization-server
+#
+# For production-like local testing with TLS + a real hostname, add the Caddy
+# service below (commented out by default — uncomment + add `127.0.0.1
+# mcp.staging.orgo.space` to /etc/hosts).
+
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: orgo-mcp:local
+    restart: unless-stopped
+    ports:
+      - "3333:3333"
+    environment:
+      # No ORGO_TENANT_HOST → multi-tenant mode. Derived from Host header.
+      ORGO_AUTH_BASE_URL: https://app.orgo.space
+      ORGO_ALLOWED_TENANT_SUFFIXES: .orgo.space
+      ORGO_OAUTH_SCOPES: profile email groups roles
+      ORGO_LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3333/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Uncomment to terminate TLS locally with Caddy (requires DNS or /etc/hosts).
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "443:443"
+  #     - "80:80"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - mcp
+
+# volumes:
+#   caddy_data:
+#   caddy_config:
