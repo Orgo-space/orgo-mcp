@@ -37,7 +37,18 @@ export interface TenantResolverOptions {
 }
 
 export function loadTenantResolverOptions(env: NodeJS.ProcessEnv = process.env): TenantResolverOptions {
-  const pattern = env.ORGO_TENANT_FROM_HOST_PATTERN?.trim() || '^mcp\\.(.+)$';
+  // Default scheme: URL is `{tenant-shortname}.mcp.{parent-domain}` (e.g.
+  // `app.mcp.orgo.space`), and the resolved tenant host is
+  // `{tenant-shortname}.{parent-domain}` (e.g. `app.orgo.space`).
+  //
+  // Two capture groups: shortname + parent domain. Tenant host = $1.$2.
+  // This mirrors how Cloudflare/Route53 wildcard records actually work
+  // (`*.mcp.orgo.space → IP` covers `app.mcp.orgo.space`, `contoso.mcp...`).
+  //
+  // Alternative single-group form (`^(.+)$`) is still supported — if the regex
+  // has only one capture group, that group's value is used directly as the
+  // tenant host.
+  const pattern = env.ORGO_TENANT_FROM_HOST_PATTERN?.trim() || '^([^.]+)\\.mcp\\.(.+)$';
   let hostPattern: RegExp;
   try {
     hostPattern = new RegExp(pattern, 'i');
@@ -46,7 +57,8 @@ export function loadTenantResolverOptions(env: NodeJS.ProcessEnv = process.env):
   }
   if (hostPattern.source.indexOf('(') === -1) {
     throw new Error(
-      'ORGO_TENANT_FROM_HOST_PATTERN must contain a capture group for the tenant host (default: ^mcp\\.(.+)$)',
+      'ORGO_TENANT_FROM_HOST_PATTERN must contain at least one capture group ' +
+        '(default: ^([^.]+)\\.mcp\\.(.+)$, which captures shortname + parent domain)',
     );
   }
 
@@ -130,7 +142,9 @@ export function resolveTenant(
       detail: `Host "${host}" did not match the tenant routing pattern ${options.hostPattern}.`,
     };
   }
-  const tenantHost = match[1].toLowerCase();
+  // Two capture groups → tenant host = `${shortname}.${parent}` (e.g. `app.orgo.space`).
+  // One capture group → use it as-is (single-group regex is still supported).
+  const tenantHost = (match[2] ? `${match[1]}.${match[2]}` : match[1]).toLowerCase();
 
   if (!options.allowedSuffixes.some((suffix) => tenantHost === suffix.replace(/^\./, '') || tenantHost.endsWith(suffix))) {
     return {
