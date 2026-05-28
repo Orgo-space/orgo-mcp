@@ -39,7 +39,7 @@ internet
 | `orgo-infrastructure` repo cloned at `/Users/alex/orgo-infrastructure` | Existing |
 | `gh` CLI logged into the `orgo-space` org | Existing |
 | The Orgo OAuth server up at `https://app.orgo.space/oauth/{authorize,token,userinfo}` | Existing |
-| Route53 hosted zone for `orgo.space` | Existing |
+| Cloudflare account with edit access on the `orgo.space` zone | Existing — DNS is in Cloudflare, not Route53 |
 | SNS topic `orgo-alarms` in `eu-central-1` | Existing |
 | GHCR image `ghcr.io/orgo-space/orgo-mcp:<tag>` published | One run of the `release.yml` workflow on a `v*.*.*` tag |
 
@@ -82,9 +82,22 @@ terragrunt plan      # review carefully on first apply
 terragrunt apply
 ```
 
-On success you'll see outputs for `instance_id`, `public_ip`, `dns_records`, `log_group_name`. The Route53 records propagate within ~60s.
+On success you'll see outputs for `instance_id`, `public_ip`, `log_group_name`. Grab the IP for the next step.
 
-### 4. Bootstrap verification
+### 4. Add the DNS records in Cloudflare
+
+In the Cloudflare dashboard for `orgo.space`, add two A records pointing at the EIP from the previous step:
+
+| Type | Name | Content | Proxy | TTL |
+|---|---|---|---|---|
+| A | `mcp` | `<public_ip>` | DNS only (grey cloud) | Auto |
+| A | `*.mcp` | `<public_ip>` | DNS only (grey cloud) | Auto |
+
+**Important: keep the proxy OFF (grey cloud, not orange).** Caddy on the box needs to receive the incoming Host header unchanged to derive the tenant correctly. Cloudflare's proxy would rewrite it.
+
+Propagation is usually <30s. Verify with `dig mcp.orgo.space` — you should see the EIP.
+
+### 5. Bootstrap verification
 
 Wait ~90 seconds for cloud-init to finish, then check the box came up clean:
 
