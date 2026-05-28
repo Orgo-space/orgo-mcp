@@ -1,0 +1,92 @@
+[
+  {
+    "event": "user.created",
+    "summary": "User created",
+    "description": "Fires when a new User is created — through self-registration, admin\ncreation, OAuth signup, or successful adhesion. The `object` is the\nfull user with read-group fields."
+  },
+  {
+    "event": "user.updated",
+    "summary": "User updated",
+    "description": "Fires when a User's profile, status, or relationships change. The\n`object` is the full user post-change; `previous_attributes` carries\nonly the fields that changed."
+  },
+  {
+    "event": "user.deleted",
+    "summary": "User deleted",
+    "description": "Fires when a User is permanently deleted (irreversible — distinct from\nsoft-deletion via status `INACTIVE`). The `object` is the last-known\nstate of the user before deletion."
+  },
+  {
+    "event": "product_payment.created",
+    "summary": "Payment created",
+    "description": "Fires the moment a payment is initiated — Stripe checkout started,\nbank-transfer invoice issued, manual entry by treasurer. Status will\ntypically be `PENDING` at this point."
+  },
+  {
+    "event": "product_payment.updated",
+    "summary": "Payment updated",
+    "description": "Fires when a payment's status, amount, or metadata changes — payment\ncaptured, refunded, marked-as-paid for bank transfers, etc. Use\n`previous_attributes.status` to detect the transition."
+  },
+  {
+    "event": "product_payment.deleted",
+    "summary": "Payment deleted",
+    "description": "Fires when a payment record is hard-deleted. Rare — refunds and\ncancellations update status rather than delete. Mostly emitted from\nadmin cleanup of erroneous duplicate entries."
+  },
+  {
+    "event": "event_attend.created",
+    "summary": "Event registration created",
+    "description": "Fires when someone registers for an event — Member self-registers,\nadmin registers them, external invite is accepted. Use to send your\nown confirmation emails or sync to a third-party event-mgmt tool."
+  },
+  {
+    "event": "event_attend.updated",
+    "summary": "Event registration updated",
+    "description": "Fires when the registration's status changes — confirmed by admin,\nchecked in at the door, marked no-show. Also fires when guest tickets\nare added or removed."
+  },
+  {
+    "event": "event_attend.deleted",
+    "summary": "Event registration deleted",
+    "description": "Fires when a registration is canceled. Capacity is returned to the\npool. Refunds (if any) are handled separately as `product_payment.updated`."
+  },
+  {
+    "event": "contract_user.created",
+    "summary": "Contract assigned to a user",
+    "description": "Fires when a Contract template is assigned to a User or Contact via\n`POST /api/v1/contract_users`. Useful for triggering signature-chase\nreminders, or projecting the assignment into your compliance system."
+  },
+  {
+    "event": "contract_user.updated",
+    "summary": "Contract signed or status changed",
+    "description": "Fires when a contract-user record's signature state changes — typically\n`UNSIGNED → SIGNED → COMPLETE`. `previous_attributes.status` is the\nreliable signal that a signature just happened."
+  },
+  {
+    "event": "contract_user.deleted",
+    "summary": "Contract assignment deleted",
+    "description": "Fires when an unsigned contract-user record is removed (e.g., via\n`ask-resign` which cancels all unsigned instances of a contract)."
+  },
+  {
+    "event": "user_role.created",
+    "summary": "Role assigned to a user",
+    "description": "Fires when a User is granted a role on a Unit — promotion to chapter\nlead, treasurer assignment, etc. Useful for sync to external\npermission systems (Slack channels, GitHub teams)."
+  },
+  {
+    "event": "user_role.updated",
+    "summary": "Role assignment updated",
+    "description": "Fires when a role assignment's properties change (scope adjustment,\nvalidity dates, custom attributes). The role itself is immutable — to\n\"change a role\", delete the old assignment and create a new one."
+  },
+  {
+    "event": "user_role.deleted",
+    "summary": "Role assignment revoked",
+    "description": "Fires when a role assignment is removed. Permission re-evaluation\nhappens immediately on the next API call; cached JWT roles take\neffect on the next refresh."
+  },
+  {
+    "event": "contact.created",
+    "summary": "Contact created",
+    "description": "Fires when a new Contact is created — manually entered, imported from\nCSV, generated from a public form submission, or auto-created from\nan event invitation."
+  },
+  {
+    "event": "contact.updated",
+    "summary": "Contact updated",
+    "description": "Fires when a Contact's profile changes — newsletter opt-in/out, tag\nadded/removed, custom field update. Use `previous_attributes` to\ndetect specific transitions (unsubscribes, status changes)."
+  },
+  {
+    "event": "contact.deleted",
+    "summary": "Contact deleted",
+    "description": "Fires when a Contact is permanently deleted. Contacts with successful\nproduct payments cannot be deleted — this event only fires for\ncontacts free of financial history."
+  }
+]

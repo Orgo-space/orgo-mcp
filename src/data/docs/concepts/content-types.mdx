@@ -1,0 +1,181 @@
+---
+title: 'Content types'
+description: 'JSON-LD versus plain JSON versus multipart, and the Hydra collection envelope'
+---
+
+The Orgo API supports three response formats and two request formats. Most endpoints accept all of them — the format is chosen by the `Accept` and `Content-Type` headers.
+
+For 95% of integrations, **plain `application/json`** is the right choice. Use JSON-LD when you need pagination metadata or generic link discovery, and multipart only when you are uploading files.
+
+---
+
+## Response formats
+
+| `Accept` header | Format | When to use |
+|---|---|---|
+| `application/ld+json` *(default)* | JSON-LD with Hydra | You want collection metadata (`hydra:totalItems`, next-page links) or are building a generic client that follows links |
+| `application/json` | Plain JSON | Most integrations — simpler shape, no `@context`/`@id`/`@type` |
+| `multipart/form-data` | Multipart | Rarely useful as a response format; included for symmetry with multipart requests |
+
+If you do not send an `Accept` header at all, JSON-LD is returned by default.
+
+### Example: the same resource, three ways
+
+`GET /api/v1/users/42` returns one of these depending on the `Accept` header:
+
+<Tabs>
+  <Tab title="JSON-LD (default)">
+    ```json
+    {
+      "@context": "/api/contexts/User",
+      "@id": "/api/v1/users/42",
+      "@type": "User",
+      "id": 42,
+      "firstName": "James",
+      "lastName": "Patterson",
+      "email": "james.patterson@example.com",
+      "status": "ACTIVE",
+      "localCenter": {
+        "@id": "/api/v1/local_centers/4",
+        "@type": "LocalCenter",
+        "id": 4,
+        "name": "Boston"
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Plain JSON">
+    ```json
+    {
+      "id": 42,
+      "firstName": "James",
+      "lastName": "Patterson",
+      "email": "james.patterson@example.com",
+      "status": "ACTIVE",
+      "localCenter": {
+        "id": 4,
+        "name": "Boston"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+The data is the same — JSON-LD just adds the `@context`, `@id`, `@type` wrapping that lets generic clients reason about the response without knowing the schema in advance.
+
+---
+
+## The Hydra collection envelope
+
+JSON-LD collections are wrapped in a Hydra envelope that carries totals and pagination links:
+
+```json
+{
+  "@context": "/api/contexts/User",
+  "@id": "/api/v1/users",
+  "@type": "hydra:Collection",
+  "hydra:member": [
+    { "@id": "/api/v1/users/42", "firstName": "James", ... },
+    { "@id": "/api/v1/users/43", "firstName": "Emma",  ... }
+  ],
+  "hydra:totalItems": 1248,
+  "hydra:view": {
+    "@id": "/api/v1/users?page=2",
+    "@type": "hydra:PartialCollectionView",
+    "hydra:first": "/api/v1/users?page=1",
+    "hydra:last":  "/api/v1/users?page=42",
+    "hydra:previous": "/api/v1/users?page=1",
+    "hydra:next": "/api/v1/users?page=3"
+  }
+}
+```
+
+Plain JSON returns just the array:
+
+```json
+[
+  { "id": 42, "firstName": "James", ... },
+  { "id": 43, "firstName": "Emma",  ... }
+]
+```
+
+**You lose `hydra:totalItems` and the next-page links in plain JSON.** If you need to display "showing 60 of 1,248" or iterate every page, use JSON-LD.
+
+<Tip>
+For ad-hoc scripting and one-off integrations, plain JSON is shorter and easier to consume. For data-pipeline integrations that need to paginate through everything, JSON-LD is usually worth the slightly noisier envelope.
+</Tip>
+
+---
+
+## Request formats
+
+| `Content-Type` header | Method | When to use |
+|---|---|---|
+| `application/json` | `POST`, `PUT` | Create or full-replace a resource — most common |
+| `application/merge-patch+json` | `PATCH` | Partial update following RFC 7396 (send only fields you want to change) |
+| `application/ld+json` | `POST`, `PUT` | Same as plain JSON but you can include `@id` references to other resources |
+| `multipart/form-data` | `POST`, `PATCH` | File uploads — see below |
+
+### PATCH and merge-patch
+
+Always send `Content-Type: application/merge-patch+json` for PATCH. The endpoint only updates the fields you include — missing fields are left untouched.
+
+```bash
+# Update James's phone number, leave everything else alone
+curl -X PATCH https://acme.orgo.space/api/v1/users/42 \
+  -H "Api-Token: $TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"phoneNumber":"+1 415 555 0142"}'
+```
+
+Sending `null` for a field explicitly clears it (where the field is nullable). Sending an empty string is treated as the literal empty string.
+
+### Referencing other resources
+
+For relations, send the IRI (Internationalized Resource Identifier) of the target:
+
+```json
+{
+  "firstName": "James",
+  "lastName": "Patterson",
+  "email": "james.patterson@example.com",
+  "localCenter": "/api/v1/local_centers/4",
+  "type": "/api/v1/roles/12"
+}
+```
+
+This works for both JSON and JSON-LD requests. Sending the full nested object instead of the IRI is also accepted but slower and more error-prone — prefer IRIs.
+
+### File uploads (multipart)
+
+For endpoints that accept file uploads — ID documents, contract signatures, course media, drive files, profile pictures — use `multipart/form-data`:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/adhesion/123/upload-id \
+  -H "Api-Token: $TOKEN" \
+  -F "idMedia=@/path/to/passport.pdf"
+```
+
+The field name (`idMedia` above) is documented per endpoint. For endpoints that accept both metadata and files, include the metadata as additional form fields:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/drives \
+  -H "Api-Token: $TOKEN" \
+  -F "name=Annual Report 2026" \
+  -F "file=@/path/to/report.pdf"
+```
+
+---
+
+## When in doubt
+
+- **You're a human writing a curl by hand**: omit `Accept` (defaults to JSON-LD) for the metadata, or set `Accept: application/json` for cleaner output.
+- **You're writing an integration**: `Accept: application/json` for reads, `Content-Type: application/json` for writes, `Content-Type: application/merge-patch+json` for partial updates, `Content-Type: multipart/form-data` for uploads.
+- **You're building a generic browser/client over the API**: stay on JSON-LD throughout so you get the link relations.
+
+---
+
+## Related
+
+- [Pagination and filters](/api-reference/concepts/pagination-and-filters) — how to iterate collections
+- [Errors](/api-reference/concepts/errors) — error envelope shape (same for all content types)

@@ -1,0 +1,248 @@
+---
+title: 'Run a board election'
+description: 'Set up a multi-question vote, eligible-voter list, open and close voting, export results'
+---
+
+This walkthrough runs an end-to-end e-voting session: board elections, by-law changes, motion votes. It uses the [VoteCollection](/api-reference/votecollection) and Vote resources.
+
+Who is this for: governance automation that needs to spin up scheduled votes (annual board elections, quarterly motion ratification), or integrations that synchronize vote outcomes back to a federation's records.
+
+---
+
+## Concepts
+
+- A **VoteCollection** is one voting session — usually one meeting, one ratification cycle, or one election. It groups one or more `Vote` records.
+- A **Vote** is a single question — "Elect Treasurer", "Approve Article 4 amendment". A VoteCollection can have many votes voted on together.
+- Voting can be **secret** (no audit trail of who voted what) or **public** (each ballot recorded against the voter).
+
+---
+
+## Step 1 — Create the vote collection
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/vote_collections \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Board Election — Spring 2026",
+    "description": "Cast your vote for three open seats on the Boston chapter board.",
+    "dateOpen": "2026-03-15T18:00:00+00:00",
+    "dateClose": "2026-03-15T21:00:00+00:00",
+    "isSecret": true,
+    "unit": "/api/v1/units/4"
+  }'
+```
+
+`unit` determines eligibility — only active members in that unit (and any sub-units) can vote.
+
+The collection is created in `DRAFT`. You can add questions and edit eligibility while in DRAFT; once published, the question set is locked.
+
+Response:
+
+```json
+{
+  "id": 22,
+  "name": "Board Election — Spring 2026",
+  "status": "DRAFT",
+  "isSecret": true,
+  "dateOpen": "2026-03-15T18:00:00+00:00",
+  "dateClose": "2026-03-15T21:00:00+00:00"
+}
+```
+
+---
+
+## Step 2 — Add questions (Votes)
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/votes \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voteCollection": "/api/v1/vote_collections/22",
+    "question": "Elect the Boston chapter board for 2026-2027.",
+    "questionType": "MULTIPLE_CHOICE",
+    "maxChoices": 3,
+    "minChoices": 1,
+    "choices": [
+      {"label": "James Patterson"},
+      {"label": "Emma Whitfield"},
+      {"label": "Sarah O'\''Connor"},
+      {"label": "Michael Chen"},
+      {"label": "Olivia Brown"}
+    ]
+  }'
+```
+
+For each question, set `questionType`:
+
+| Type | Use for |
+|---|---|
+| `SINGLE_CHOICE` | One-of-many — e.g. "Approve the budget?" with Yes/No/Abstain |
+| `MULTIPLE_CHOICE` | Up to N selections — e.g. "Pick 3 board members from 5 candidates" |
+| `RANKED_CHOICE` | Order preferences — e.g. instant-runoff voting |
+| `OPEN_TEXT` | Free-form responses — for surveys, not binding votes |
+
+Add as many questions as the meeting needs. They appear in the order you create them.
+
+---
+
+## Step 3 — Publish (members get notified)
+
+Once questions are in place, publish:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/vote_collections/22 \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"status": "PUBLISHED"}'
+```
+
+This sends a notification to every eligible voter — push notification + email — with a link to the vote landing page.
+
+After this point, you cannot add or edit questions. You can still postpone the open/close dates.
+
+---
+
+## Step 4 — Open voting
+
+When the meeting starts (or the calendar reaches `dateOpen` automatically):
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/vote_collections/22 \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"status": "OPEN"}'
+```
+
+Members can now cast ballots via the member dashboard or `POST /api/v1/votes/{id}/cast` (per question).
+
+The `GET /api/v1/has_live_votes` endpoint returns `true` for any user with at least one open VoteCollection they haven't yet voted in — your member app can use this to surface "you have unfinished votes" badges.
+
+---
+
+## Step 5 — Close voting and tally
+
+When `dateClose` passes (or you close it manually):
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/vote_collections/22/close \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+Tallying runs automatically. Results are visible immediately on the collection.
+
+```bash
+curl https://acme.orgo.space/api/v1/vote_collections/22 \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+Response includes per-question results:
+
+```json
+{
+  "id": 22,
+  "status": "CLOSED",
+  "voteCount": 142,
+  "eligibleVoterCount": 312,
+  "turnout": 0.455,
+  "votes": [
+    {
+      "id": 45,
+      "question": "Elect the Boston chapter board for 2026-2027.",
+      "results": [
+        {"label": "James Patterson", "count": 98, "percentage": 0.69},
+        {"label": "Emma Whitfield", "count": 87, "percentage": 0.61},
+        {"label": "Sarah O'Connor", "count": 76, "percentage": 0.54},
+        {"label": "Michael Chen", "count": 54, "percentage": 0.38},
+        {"label": "Olivia Brown", "count": 21, "percentage": 0.15}
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Step 6 — Export results
+
+For board minutes, federation reporting, or external compliance, export the full result set as CSV:
+
+```bash
+curl https://acme.orgo.space/api/v1/vote_collections/22/export \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Accept: text/csv" \
+  -o spring-2026-board-election.csv
+```
+
+For non-secret votes, the CSV includes each voter and their choice. For secret votes, only the aggregated counts.
+
+---
+
+## Step 7 — Archive
+
+After the results are circulated and the board minutes are signed:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/vote_collections/22/archive \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+Archived collections are hidden from the default listing (`GET /api/v1/vote_collections`) but accessible via `?status=ARCHIVED`. Results remain queryable indefinitely.
+
+---
+
+## Cloning for the next cycle
+
+To run "the same election" next year, clone instead of recreating:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/vote_collections/22/clone \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Board Election — Spring 2027",
+    "dateOpen": "2027-03-14T18:00:00+00:00",
+    "dateClose": "2027-03-14T21:00:00+00:00"
+  }'
+```
+
+Copies the questions and choices into a fresh DRAFT. Update candidate names and re-publish.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="Eligible-voter count is lower than expected">
+    The eligibility filter is `User.status == ACTIVE AND member of (unit OR child-units) AND isFeeActive`. Lapsed members (fee expired) are excluded. To include them, transition them to ACTIVE first via the fee renewal flow.
+  </Accordion>
+
+  <Accordion title="A voter says they didn't get the notification">
+    Notifications respect the member's notification preferences. If they've disabled push + email for "governance" notifications, they won't be alerted — but they can still cast a vote via the member dashboard while the collection is OPEN. Voters with no email at all are listed in `eligibleVoterCount` but cannot be reached.
+  </Accordion>
+
+  <Accordion title="Can a member change their vote after casting?">
+    Yes, while the collection is `OPEN`. Re-cast via `POST /api/v1/votes/{id}/cast`; the latest choice wins. Once `CLOSED`, votes are locked.
+  </Accordion>
+
+  <Accordion title="The vote needs a quorum — how do I enforce it?">
+    There's no native quorum gate. Run the close manually and check `turnout` against your bylaws before treating the result as binding. For meetings that may not reach quorum, extend `dateClose` to give more time, or proxy votes (which Orgo doesn't model — capture as `OPEN_TEXT` questions and reconcile out-of-band).
+  </Accordion>
+
+  <Accordion title="How are ties broken?">
+    Orgo reports raw counts — tie-breaking is governance-level (board chair casts deciding vote, coin flip, runoff election). For a runoff, clone the collection with just the tied candidates and run again.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Permissions](/platform/permissions) — only `HR_LOCAL` and above can create vote collections
+- [Run a board election](/platform/e-voting) — the admin-side documentation
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — react to vote results being finalized

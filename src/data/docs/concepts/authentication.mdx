@@ -1,0 +1,188 @@
+---
+title: 'Authentication'
+description: 'Five ways to authenticate against the Orgo API and when to use each'
+---
+
+The Orgo API accepts five authentication methods. The one you should use depends on who is calling and from where.
+
+| Method | Who uses it | Header |
+|---|---|---|
+| **Api-Token** | Servers, scripts, CRON jobs you control | `Api-Token: <token>` |
+| **Bearer JWT** | A user who logged in with email + password | `Authorization: Bearer <jwt>` |
+| **OAuth 2.0** | A third-party app acting on behalf of an Orgo user | Standard OAuth flow |
+| **OTP** | A user logging in via emailed one-time code | Returns a JWT, then `Authorization: Bearer <jwt>` |
+| **X-Contact-Hash** | An emailed contact opening an event link | `X-Contact-Hash: <hash>` |
+
+For most integrations the answer is **Api-Token**. The other four exist for specific user-facing flows.
+
+---
+
+## Api-Token (server-to-server)
+
+Generate a token at **Settings → Developers → API Access**. Send it as a raw header — there is no `Bearer` prefix and no encoding:
+
+```bash
+curl https://your-org.orgo.space/api/v1/users \
+  -H "Api-Token: 7f3c8b4e2a..."
+```
+
+Tokens carry one of two access levels:
+
+- **Read/write** — full access to whatever the owning user can do.
+- **Read-only** — any `POST`, `PATCH`, `PUT`, or `DELETE` is rejected with `403 Forbidden`. Useful for analytics integrations.
+
+Tokens inherit the permissions of the user that created them. If the user loses a role, the token loses the same access. Revoke a token by deleting it in the same UI — it stops working immediately.
+
+<Warning>
+Tokens grant durable access. Never commit them, log them, or send them to a client browser. Rotate periodically and prefer one token per integration so you can revoke individually.
+</Warning>
+
+---
+
+## JWT (interactive login)
+
+For sessions started by a user typing email + password, exchange those credentials for a JWT:
+
+```bash
+curl -X POST https://your-org.orgo.space/api/v1/login-check \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice@example.com","password":"<password>"}'
+```
+
+Response:
+
+```json
+{
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh_token": "f3c7a..."
+}
+```
+
+Send the JWT on every subsequent call:
+
+```bash
+curl https://your-org.orgo.space/api/v1/me \
+  -H "Authorization: Bearer eyJ0eXAi..."
+```
+
+JWTs are valid for approximately **11 days**. After expiry, exchange the refresh token at `POST /api/v1/token/refresh` for a new pair.
+
+JWTs are scoped to the tenant the login was made against — calling a different tenant's host with the same JWT will fail with `401`.
+
+---
+
+## OAuth 2.0 (third-party apps)
+
+When you want users to "Log in with Orgo" from a third-party site, register an OAuth app at **Settings → Developers → OAuth Applications** and use the Authorization Code flow:
+
+```
+1. Redirect user to:
+   https://app.orgo.space/oauth/authorize
+     ?client_id=YOUR_CLIENT_ID
+     &redirect_uri=YOUR_CALLBACK
+     &response_type=code
+     &scope=profile+email
+     &state=<csrf_token>
+
+2. After approval, Orgo redirects to:
+   YOUR_CALLBACK?code=<auth_code>&state=<csrf_token>
+
+3. Exchange the code server-side:
+   POST https://app.orgo.space/oauth/token
+     grant_type=authorization_code
+     code=<auth_code>
+     client_id=YOUR_CLIENT_ID
+     client_secret=YOUR_CLIENT_SECRET
+     redirect_uri=YOUR_CALLBACK
+
+4. Use the access token:
+   GET https://app.orgo.space/oauth/userinfo
+     Authorization: Bearer <access_token>
+```
+
+Available scopes: `profile`, `email`, `groups`, `roles`. Request only what you need — fewer scopes means a simpler consent screen for the user.
+
+Full setup walkthrough: [OAuth Server](/platform/oauth).
+
+<Warning>
+Single-page apps cannot safely store the client secret. Use **PKCE** (add `code_challenge` and `code_challenge_method=S256` to the authorize call) and skip the secret on the token exchange, or do the exchange server-side.
+</Warning>
+
+---
+
+## OTP (one-time password)
+
+For users who do not have a password — or who prefer a magic-link flow — Orgo can send a 6-digit code by email. Two steps:
+
+```bash
+# 1. Request the code
+curl -X POST https://your-org.orgo.space/api/v1/request-login-otp \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com"}'
+
+# 2. Verify the code (returns a JWT exactly like /login-check)
+curl -X POST https://your-org.orgo.space/api/v1/verify-login-otp \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","otp":"483921"}'
+```
+
+OTP requests are rate-limited per email — typically 20 requests per 60 seconds — to prevent abuse. From there, the returned JWT is used exactly like the password-login JWT.
+
+OTP is also the auth method used by the event-app surface (members logging in from inside an event landing page) and for password resets.
+
+---
+
+## X-Contact-Hash (anonymous contacts)
+
+When Orgo emails a Contact (someone without a user account) an event invitation or a form link, the email contains a magic URL with a hash. That hash is also the auth header:
+
+```bash
+curl https://your-org.orgo.space/api/v1/event_attends/12345 \
+  -H "X-Contact-Hash: 9a8f7e6d5c..."
+```
+
+This authenticates the contact for that specific event and that specific contact identity — they cannot use the hash to access other contacts' data. Most server-to-server integrations will not use this; it is here for completeness.
+
+---
+
+## Picking the right method
+
+<AccordionGroup>
+  <Accordion title="I'm building an integration that runs on a server I control">
+    **Api-Token.** Read-only if you only need to fetch data; read/write if you need to create or update.
+  </Accordion>
+
+  <Accordion title="I'm building a mobile or web app that logs users in with their Orgo password">
+    **JWT.** Call `POST /api/v1/login-check` with the user's credentials, store the returned JWT, and send it on every subsequent call.
+  </Accordion>
+
+  <Accordion title="I want users to click 'Log in with Orgo' on my third-party site">
+    **OAuth 2.0.** Register an OAuth application and follow the Authorization Code flow.
+  </Accordion>
+
+  <Accordion title="I want password-less login by email code">
+    **OTP.** Two-step: `request-login-otp` then `verify-login-otp`. Returns a JWT.
+  </Accordion>
+
+  <Accordion title="I'm building the receiving end of an Orgo-sent email link for non-members">
+    **X-Contact-Hash.** The hash is in the URL Orgo emails; lift it into the header on subsequent API calls.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Common authentication errors
+
+| Status | What it means | Fix |
+|---|---|---|
+| `401 Unauthorized` | Header missing, malformed, or invalid token | Re-send the header; if the token is right, it may have been revoked or expired |
+| `403 Forbidden` | Authenticated, but lacks permission OR token is read-only and you sent a write | Check `Api-Token` access level; check the user's role for this resource |
+| `404 Not Found` | Resource exists but in a different tenant | Confirm you are calling the correct subdomain — see [Tenancy](/api-reference/concepts/tenancy) |
+
+---
+
+## Related
+
+- [Tenancy](/api-reference/concepts/tenancy) — getting the tenant context right is half of getting auth right
+- [Errors](/api-reference/concepts/errors) — full error envelope reference
+- [OAuth Server](/platform/oauth) — admin-side setup for OAuth applications

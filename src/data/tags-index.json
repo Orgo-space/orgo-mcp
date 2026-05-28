@@ -1,0 +1,474 @@
+[
+  {
+    "name": "DashboardWelcomeMessage",
+    "description": "A configurable banner / message that appears at the top of the member\ndashboard — used for announcements, onboarding tips, or seasonal\ncampaigns. Tenant-scoped, can be targeted per user via the current_user\nendpoint."
+  },
+  {
+    "name": "EventStatus",
+    "description": "Resource 'EventStatus' operations."
+  },
+  {
+    "name": "FormSubmission",
+    "description": "Resource 'FormSubmission' operations."
+  },
+  {
+    "name": "FormSubmissionAnswer",
+    "description": "Resource 'FormSubmissionAnswer' operations."
+  },
+  {
+    "name": "TenantProfessionDisabled",
+    "description": "Resource 'TenantProfessionDisabled' operations."
+  },
+  {
+    "name": "UserOption",
+    "description": "Resource 'UserOption' operations."
+  },
+  {
+    "name": "Adhesion",
+    "description": "A membership application. The applicant fills in personal data, uploads an\nID document and a signed adhesion form, optionally records a video answer,\nand submits it for HR review. HR runs an interview, then transitions the\napplication to a final state — which in turn assigns the `MEMBER` role and\nactivates the fee.\n\nLifecycle: `NEW` (draft, editable) → `PENDING` (submitted) → `VALIDATED`\n(data verified) → `INTERVIEWED` (interview complete) → `SUCCESS` (member\nactivated) or `REJECTED` (terminal). Each transition can trigger emails\n(confirmation, rejection, welcome) and side effects (role assignment, fee\nstart)."
+  },
+  {
+    "name": "Badge",
+    "description": "Resource 'Badge' operations."
+  },
+  {
+    "name": "BadgeType",
+    "description": "Resource 'BadgeType' operations."
+  },
+  {
+    "name": "BadgeUser",
+    "description": "Resource 'BadgeUser' operations."
+  },
+  {
+    "name": "BadgeHour",
+    "description": "Resource 'BadgeHour' operations."
+  },
+  {
+    "name": "BundleMember",
+    "description": "Resource 'BundleMember' operations."
+  },
+  {
+    "name": "Certification",
+    "description": "Resource 'Certification' operations."
+  },
+  {
+    "name": "Company",
+    "description": "An organizational member — a business, partner organization, or sponsor that\npays membership separately from individual users. Companies have their own\ninvitations, members (users with company roles), invoices, payment plans, and\nbank-transfer flows. Lifecycle: `NEW` → `ACTIVE` → `DELETED` (soft, when the\nlast member leaves). Most company operations require `COMPANY_*` permissions\nthat the primary contact or tenant admin holds."
+  },
+  {
+    "name": "CompanyInvitation",
+    "description": "Resource 'CompanyInvitation' operations."
+  },
+  {
+    "name": "CompanyUser",
+    "description": "Resource 'CompanyUser' operations."
+  },
+  {
+    "name": "Contact",
+    "description": "A person tracked by the organization who does not have a member account —\nprospects, event attendees, newsletter subscribers, donors. Contacts share\nmost profile fields with Users (email, phone, custom fields) but cannot log\nin. A Contact can be converted into a User by initiating an adhesion or\nsending an invitation. Contacts are scoped to a local center and protected\nby the same tenant-isolation rules as Users."
+  },
+  {
+    "name": "Contract",
+    "description": "A reusable contract template — membership agreement, NDA, code of conduct,\nparental-consent form. Defines the content, placeholder fields (resolved\nper-signer from User profile and custom fields), signature requirements\n(member-only, admin co-sign, default-admin-signature), and which units the\ncontract applies to. Editing a contract can invalidate existing signatures\nvia the request-resigning endpoint."
+  },
+  {
+    "name": "ContractUser",
+    "description": "An individual instance of a Contract assigned to a specific User or Contact.\nHolds signature status, the rendered placeholder values, the signed PDF,\nand validity dates. Lifecycle: `UNSIGNED` → `SIGNED` (with or without\ndigital signature) → optionally `EXPIRED`. Admins can mark contracts as\nsigned manually or apply a default-admin signature in bulk."
+  },
+  {
+    "name": "Country",
+    "description": "Resource 'Country' operations."
+  },
+  {
+    "name": "County",
+    "description": "Resource 'County' operations."
+  },
+  {
+    "name": "Course",
+    "description": "Resource 'Course' operations."
+  },
+  {
+    "name": "CourseEnrollment",
+    "description": "A User's enrollment in a Course — including progress through lessons,\nquiz scores, and completion status. Created when a user self-enrolls or\nwhen an admin enrolls them (with optional notification). Exporting\nenrollments produces a CSV for reporting."
+  },
+  {
+    "name": "CourseLesson",
+    "description": "A unit of course content — text, video, downloadable media. Lessons are\nordered within a Course and surfaced sequentially to the enrolled User.\nMedia attachments use the standard Media + S3 storage."
+  },
+  {
+    "name": "CourseLessonAttachment",
+    "description": "Resource 'CourseLessonAttachment' operations."
+  },
+  {
+    "name": "CourseQuiz",
+    "description": "An assessment attached to a Course — multiple-choice questions with a\npass/fail threshold. Quiz results are recorded per CourseEnrollment and\ncan be exported for the course administrator."
+  },
+  {
+    "name": "CourseSection",
+    "description": "Resource 'CourseSection' operations."
+  },
+  {
+    "name": "CustomField",
+    "description": "Resource 'CustomField' operations."
+  },
+  {
+    "name": "CustomFieldValue",
+    "description": "Stored answers for tenant-defined custom fields. Each row links a CustomField definition to one of three possible owners: a user (`user`), a contact (`contact`), or an event attendance (`eventAttend`). Exactly one of these is set per row; the others are null. The `value` column holds the answer as a string (multi-option fields store a comma-separated list, file/image fields store the answer in `media` and leave `value` blank). All queries are tenant-isolated through `field.tenant`, which is guaranteed non-null. The endpoint exposes only the values whose custom field definition belongs to the current user's tenant. Custom field values attached to event attendances are typically read through `/event_attends/{id}` rather than this collection. Values can be created directly through `POST` on this resource (one value per request, with exactly one of `user`/`contact`/ `eventAttend` set), or as nested writes inside the owning entity (e.g. `PATCH /users/{id}` with a `rawUserCustomFieldsValues` map, `PATCH /contacts/{id}` with `rawContactCustomFieldsValues`). The direct `POST` route delegates to the same underlying service as the nested-write path, so encryption, file-media handling, and field-visibility checks behave identically.\n"
+  },
+  {
+    "name": "DashboardCategory",
+    "description": "Resource 'DashboardCategory' operations."
+  },
+  {
+    "name": "DashboardWidget",
+    "description": "Resource 'DashboardWidget' operations."
+  },
+  {
+    "name": "Discussion",
+    "description": "A thread of conversation within a DiscussionNamespace. Owned by a Unit\n(group, local center, project), visible per the unit's privacy rules.\nReuses Post entities for the actual messages."
+  },
+  {
+    "name": "DiscussionNamespace",
+    "description": "A category that groups discussions — for example \"Announcements\",\n\"General\", \"Volunteers\". Each namespace has its own permission model and\nsurfaces the latest discussion via a dedicated endpoint."
+  },
+  {
+    "name": "TopicType",
+    "description": "Resource 'TopicType' operations."
+  },
+  {
+    "name": "Drive",
+    "description": "A shared folder / file storage namespace — like a Google Drive folder\nscoped to a Unit or User. Supports browsing, search (\"latest\" and full-\ntext), and sharing/revoking access. Each Drive entry is either a folder\nor a file; files are stored in S3."
+  },
+  {
+    "name": "EducationIndustry",
+    "description": "Resource 'EducationIndustry' operations."
+  },
+  {
+    "name": "EmailTemplate",
+    "description": "A customizable transactional email — registration confirmation, payment\nreceipt, contract-signing reminder, etc. Templates ship with default\ncontent per tenant; admins can override the subject, body, and locale.\nSend-test and preview endpoints help verify changes before they go live."
+  },
+  {
+    "name": "Event",
+    "description": "A scheduled gathering — meeting, conference, workshop, social, vote\nassembly. Owns its public landing page, ticket types, registration form,\nattendees, capacity rules, and post-event reports. Lifecycle: `DRAFT`\n(visible only to organizers) → `PUBLISHED` (visible per audience rules) →\neffectively closed once the start date passes. Events can be duplicated,\nsaved as templates, and chained into series (sub-events)."
+  },
+  {
+    "name": "EventType",
+    "description": "Resource 'EventType' operations."
+  },
+  {
+    "name": "EventMedia",
+    "description": "Resource 'EventMedia' operations."
+  },
+  {
+    "name": "EventAttend",
+    "description": "A registration record linking a User or Contact to an Event. Carries the\nregistration form answers, ticket type, payment status, guest tickets,\ncheck-in state, and any QR-code identifier. Lifecycle: `NEW` (registered)\n→ `CONFIRMED` (admin-approved if required) → checked-in at the door.\nExternal invites (for non-Users) generate Contact records on confirmation."
+  },
+  {
+    "name": "EventSpeaker",
+    "description": "Resource 'EventSpeaker' operations."
+  },
+  {
+    "name": "EventTemplate",
+    "description": "A saved event blueprint used to spin up similar events quickly — recurring\nweekly meetings, annual fundraisers, standard workshop formats. Stores the\nsame fields as Event minus the date. The create-from-template endpoint\nclones it into a new draft Event ready for date editing."
+  },
+  {
+    "name": "EventVoucher",
+    "description": "Resource 'EventVoucher' operations."
+  },
+  {
+    "name": "ExperienceHistory",
+    "description": "Resource 'ExperienceHistory' operations."
+  },
+  {
+    "name": "FamilyEntity",
+    "description": "A household grouping that links related Users — typically a parent account\nwith linked children or a couple sharing a single membership. Family\nmembership can affect fees (e.g., one fee covers the whole household) and\ndetermines whose data a guardian account can edit. Created by the family\nprimary, joined via invitation. Has its own delete endpoint distinct from\nthe standard DELETE (preserves member accounts)."
+  },
+  {
+    "name": "FamilyMember",
+    "description": "Resource 'FamilyMember' operations."
+  },
+  {
+    "name": "FeePayment",
+    "description": "A simplified, hand-recorded fee receipt — the cash-and-paper alternative to\nthe full ProductPayment + Invoice flow. Used mostly by treasurers entering\npayments collected outside Orgo. Carries an approval endpoint for the\nreviewer workflow."
+  },
+  {
+    "name": "Form",
+    "description": "A custom form — registration form, survey, intake questionnaire, event\nRSVP form. Renders a public page that anyone with the link can fill in;\nsubmissions become FormSubmission records. Forms can resolve a \"slug-go\"\nshort link, recalculate statistics, and export submissions as a table."
+  },
+  {
+    "name": "FormField",
+    "description": "Resource 'FormField' operations."
+  },
+  {
+    "name": "Goal",
+    "description": "Resource 'Goal' operations."
+  },
+  {
+    "name": "Group",
+    "description": "Resource 'Group' operations."
+  },
+  {
+    "name": "GroupCategory",
+    "description": "Resource 'GroupCategory' operations."
+  },
+  {
+    "name": "Identity",
+    "description": "An identity-verification record on a User or anonymous applicant — the\ngovernment ID document, OCR-extracted personal data, and validation status.\nCreated either during an adhesion (upload-id step) or by an admin marking\nsomeone as verified. Lifecycle: `PENDING` → `VALIDATED` (admin-approved) or\n`REJECTED`. Reopening is possible. See\n[Identity Validation](https://orgo.space/docs/platform/identity-validation)."
+  },
+  {
+    "name": "Invoice",
+    "description": "A formal billing document issued for one or more ProductPayments — usually\nfor bank-transfer flows, company memberships, or any payment that needs a\nPDF record for accounting. Lifecycle: `PENDING` → `PAID` / `VOID`. Carries\ncancel, mark-as-paid, refund, void, send-email, and download endpoints."
+  },
+  {
+    "name": "InvoiceTemplate",
+    "description": "Resource 'InvoiceTemplate' operations."
+  },
+  {
+    "name": "IssueStatus",
+    "description": "Resource 'IssueStatus' operations."
+  },
+  {
+    "name": "IssueType",
+    "description": "Resource 'IssueType' operations."
+  },
+  {
+    "name": "LocalCenter",
+    "description": "A geographic or operational chapter of the organization — a city branch, a\nuniversity campus, a regional office. Local centers carry their own admins,\nfees, members, events, and contracts. Most permission scopes (`HR_LOCAL`,\n`FINANCIAL_LOCAL`, `ADMIN_LOCAL`) are bounded to a specific local center.\nHas a public listing endpoint and a map endpoint for the public-facing\n\"find your local center\" page."
+  },
+  {
+    "name": "LocalCenterRequest",
+    "description": "Resource 'LocalCenterRequest' operations."
+  },
+  {
+    "name": "LocalCenterUserPreference",
+    "description": "Resource 'LocalCenterUserPreference' operations."
+  },
+  {
+    "name": "LocalCenterUserType",
+    "description": "Resource 'LocalCenterUserType' operations."
+  },
+  {
+    "name": "Newsletter",
+    "description": "An email campaign — composed in the drag-and-drop builder, segmented by\naudience filter, scheduled or sent immediately, and tracked for opens /\nclicks. Lifecycle: `DRAFT` → `SCHEDULED` or `SENT`. Has clone, clone-to-non-\nopeners, and audience-statistics endpoints. Public preview pages let\nrecipients view the email in a browser."
+  },
+  {
+    "name": "NewsletterTemplate",
+    "description": "Resource 'NewsletterTemplate' operations."
+  },
+  {
+    "name": "Objective",
+    "description": "Resource 'Objective' operations."
+  },
+  {
+    "name": "OfficialGazette",
+    "description": "Resource 'OfficialGazette' operations."
+  },
+  {
+    "name": "OfficialGazetteType",
+    "description": "Resource 'OfficialGazetteType' operations."
+  },
+  {
+    "name": "Post",
+    "description": "A message in a Discussion thread — top-level posts, replies, reactions, and\nmoderation actions. Posts can be reported, removed, or moderated by users\nwith the right permission. Reactions are tallied per post and exposed via a\ndedicated endpoint."
+  },
+  {
+    "name": "Product",
+    "description": "Anything you can sell or collect money for — membership fees, event tickets,\nmerchandise, course enrollment fees, donations. Each Product has one or\nmore ProductPrices (defining amount, currency, billing period) and a public\npayment page. Lifecycle: `DRAFT` → `PUBLISHED` (live and purchasable) →\n`ARCHIVED` (hidden from listings, existing payments preserved). Requires\n`FINANCIAL_LOCAL` or `FINANCIAL_TENANT` to manage."
+  },
+  {
+    "name": "ProductOption",
+    "description": "Resource 'ProductOption' operations."
+  },
+  {
+    "name": "ProductPayment",
+    "description": "A single payment instance against a Product — one ticket purchase, one\nmembership-fee period, one donation, one bundle slot. Created by Stripe\ncheckout, manual entry, bank transfer, or bundle membership. Lifecycle:\n`PENDING` (awaiting capture) → `SUCCESS` (paid) or `REJECTED` /\n`CANCELED`. Refunds, comment annotations, and proof uploads each have\ndedicated endpoints."
+  },
+  {
+    "name": "ProductPrice",
+    "description": "Resource 'ProductPrice' operations."
+  },
+  {
+    "name": "ProductPriceAddon",
+    "description": "Resource 'ProductPriceAddon' operations."
+  },
+  {
+    "name": "ProfessionType",
+    "description": "A profession/industry classification used on User and Contact profiles for\nsegmentation and reporting (e.g., \"Engineering\", \"Healthcare\", \"Education\").\nTenant-scoped; admins can enable or disable specific values for their org\nthrough bulk-toggle endpoints."
+  },
+  {
+    "name": "ProfessionJob",
+    "description": "Resource 'ProfessionJob' operations."
+  },
+  {
+    "name": "ProfileStatus",
+    "description": "Resource 'ProfileStatus' operations."
+  },
+  {
+    "name": "ProfileTag",
+    "description": "A free-form label that admins attach to Users or Contacts for segmentation —\nfor example \"donor 2026\", \"speaker\", \"vegetarian\". Tags are tenant-scoped\nand reusable. Used heavily by Newsletter audience filters and event-invite\nsegments."
+  },
+  {
+    "name": "Project",
+    "description": "A team workspace — a working group, a campaign, a one-off initiative. Owns\nits members, tasks, drive folder, and discussion namespace. Lifecycle is\nopen-ended — projects stay around until explicitly deleted."
+  },
+  {
+    "name": "QuizAnswer",
+    "description": "Resource 'QuizAnswer' operations."
+  },
+  {
+    "name": "QuizAttempt",
+    "description": "Resource 'QuizAttempt' operations."
+  },
+  {
+    "name": "QuizQuestion",
+    "description": "Resource 'QuizQuestion' operations."
+  },
+  {
+    "name": "Referral",
+    "description": "Resource 'Referral' operations."
+  },
+  {
+    "name": "ReferralUser",
+    "description": "Resource 'ReferralUser' operations."
+  },
+  {
+    "name": "Region",
+    "description": "Resource 'Region' operations."
+  },
+  {
+    "name": "ResignationRequest",
+    "description": "Resource 'ResignationRequest' operations."
+  },
+  {
+    "name": "Role",
+    "description": "Resource 'Role' operations."
+  },
+  {
+    "name": "RoleGroup",
+    "description": "Resource 'RoleGroup' operations."
+  },
+  {
+    "name": "SubscriptionProfile",
+    "description": "A recurring billing relationship — typically a member's annual membership\nfee or a company's quarterly invoice. Captures the price, the period, the\nnext due date, and the payment method. Admins can pre-create pending\nsubscriptions and accept them once payment clears. External subscription\nprofiles cover Stripe Billing subscriptions managed outside Orgo."
+  },
+  {
+    "name": "SupportTeam",
+    "description": "Resource 'SupportTeam' operations."
+  },
+  {
+    "name": "Tag",
+    "description": "Resource 'Tag' operations."
+  },
+  {
+    "name": "Task",
+    "description": "A to-do item — usually inside a Project, but standalone tasks are\nsupported. Carries assignee, due date, status, and a comment thread.\nMulti-assignee tasks fan out per user."
+  },
+  {
+    "name": "TaskAssignee",
+    "description": "Resource 'TaskAssignee' operations."
+  },
+  {
+    "name": "Topic",
+    "description": "Resource 'Topic' operations."
+  },
+  {
+    "name": "Town",
+    "description": "Resource 'Town' operations."
+  },
+  {
+    "name": "TrainingType",
+    "description": "Resource 'TrainingType' operations."
+  },
+  {
+    "name": "TrainingTrainer",
+    "description": "Resource 'TrainingTrainer' operations."
+  },
+  {
+    "name": "Unit",
+    "description": "A generic organizational grouping — the umbrella under which local centers,\nrole groups (auto-populated by role), and private project teams all live.\nMostly used by the role-assignment and visit-tracking endpoints; most\nintegrations work with the more specific LocalCenter and Group entities\ninstead."
+  },
+  {
+    "name": "UnitRole",
+    "description": "Resource 'UnitRole' operations."
+  },
+  {
+    "name": "UnitIndustry",
+    "description": "Resource 'UnitIndustry' operations."
+  },
+  {
+    "name": "UnitType",
+    "description": "Resource 'UnitType' operations."
+  },
+  {
+    "name": "User",
+    "description": "A person with a full account in the organization. Created when someone signs\nup through the registration form, when an admin registers them, or when an\nadhesion (membership application) is approved. Users hold roles, permissions,\ncontracts, fees, family relationships, badges, and event attendances.\n\nLifecycle: `NEW` (created, awaiting email verification) → `ACTIVE` (verified,\nfully usable) → `INACTIVE` (soft-deleted or self-resigned). Admins with\n`HR_LOCAL` or `HR_TENANT` permission can transition users through these\nstates; users themselves can update their own profile fields and password."
+  },
+  {
+    "name": "UserApiToken",
+    "description": "Resource 'UserApiToken' operations."
+  },
+  {
+    "name": "UserConnection",
+    "description": "A peer-to-peer relationship between two Users in the same tenant — the\n\"follow\" / \"friend\" graph that powers the member directory's social\nfeatures. Lifecycle: `PENDING` (request sent) → `ACCEPTED` (mutual) or\nrejected (deleted). Both sides can list incoming, outgoing, and accepted\nconnections."
+  },
+  {
+    "name": "UserList",
+    "description": "Resource 'UserList' operations."
+  },
+  {
+    "name": "UserListLink",
+    "description": "Resource 'UserListLink' operations."
+  },
+  {
+    "name": "UserRole",
+    "description": "A role assignment that grants a User permissions within a specific Unit\n(local center, role group, project, or the whole tenant). The same User can\nhold many UserRoles across different units. Creating or deleting a UserRole\nis how admins promote, demote, or reorganize the team. See the\n[Permissions](https://orgo.space/docs/platform/permissions) doc for the\ndomain × scope matrix."
+  },
+  {
+    "name": "UserUnitRoleGroup",
+    "description": "Resource 'UserUnitRoleGroup' operations."
+  },
+  {
+    "name": "Vote",
+    "description": "Vote Entity - Represents a question within a VoteCollection\n\nA Vote is a single question in a voting session (VoteCollection).\nAll session-level properties (dates, status, eligibility) come from VoteCollection."
+  },
+  {
+    "name": "VoteOption",
+    "description": "Resource 'VoteOption' operations."
+  },
+  {
+    "name": "VoteUser",
+    "description": "Resource 'VoteUser' operations."
+  },
+  {
+    "name": "VoteBox",
+    "description": "Resource 'VoteBox' operations."
+  },
+  {
+    "name": "VoteCollection",
+    "description": "An e-voting session — board elections, by-law changes, motion votes. A\nVoteCollection groups one or more Votes (individual questions). Lifecycle:\n`DRAFT` → `PUBLISHED` (voters notified) → `OPEN` (accepting ballots) →\n`CLOSED` (tallied) → `ARCHIVED`. Has clone, archive, close, and CSV-export\nendpoints."
+  },
+  {
+    "name": "WaitlistEntry",
+    "description": "A pending application against a closed-registration event or organization\n— for cases where membership is capped or invitation-only. Lifecycle:\n`PENDING` → `APPROVED` (admitted, often with an invitation email) or\nrejected (withdrawn or denied). Supports bulk approve, reject, notify, and\npriority-reorder for queue management."
+  },
+  {
+    "name": "WaitlistPrioritySetting",
+    "description": "Resource 'WaitlistPrioritySetting' operations."
+  },
+  {
+    "name": "WebhookSubscription",
+    "description": "A registered HTTP endpoint that receives event notifications from Orgo.\nSubscribers pick which event types they care about (`user.created`,\n`product_payment.created`, etc. — see\n[Webhooks](https://orgo.space/docs/api-reference/concepts/webhooks)),\noptionally set a secret for signature verification, and get a delivery-\nlog endpoint for debugging. Test-firing a subscription helps verify\nend-to-end connectivity before going live."
+  },
+  {
+    "name": "Widget",
+    "description": "An embeddable subscription / signup widget that lives inside a Newsletter\nor on an external page. Captures Contacts (with their newsletter-opt-in\nstate) and feeds them into the audience pool. Has its own subscribers\nlisting and public render endpoint."
+  },
+  {
+    "name": "Workflow",
+    "description": "An automation rule — \"when X happens, do Y\" with optional conditions and\ndelays. Triggers include user-joined, payment-received, contract-signed,\ncourse-completed, identity-validated, and user-inactivity events. Actions\ninclude sending emails, assigning roles, updating fields, and creating\ntasks. Workflows can be activated, deactivated, duplicated, and test-run\nagainst sample data."
+  },
+  {
+    "name": "WorkflowExecution",
+    "description": "Resource 'WorkflowExecution' operations."
+  }
+]

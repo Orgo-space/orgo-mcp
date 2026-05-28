@@ -1,0 +1,204 @@
+---
+title: 'Pagination and filters'
+description: 'Iterating collections and narrowing them with filters and ordering'
+---
+
+Every collection endpoint in Orgo (`GET /api/v1/users`, `GET /api/v1/events`, `GET /api/v1/payments`, ...) supports the same pagination, filtering, and ordering query parameters. Once you learn the pattern on one endpoint, the rest follow the same shape.
+
+---
+
+## Pagination basics
+
+Defaults: **30 items per page**, maximum **100 per page**.
+
+| Query parameter | Purpose | Default |
+|---|---|---|
+| `page` | 1-indexed page number | `1` |
+| `itemsPerPage` | Page size (capped at 100) | `30` |
+| `pagination` | Set to `false` to disable pagination, where allowed | `true` |
+
+```bash
+# First page, default size
+GET /api/v1/users
+
+# Second page, 50 items per page
+GET /api/v1/users?page=2&itemsPerPage=50
+
+# As many items as the endpoint allows in one go
+GET /api/v1/countries?pagination=false
+```
+
+`pagination=false` is only honored on endpoints flagged for it (mostly small reference lists like countries and counties). On large collections it is ignored — you must paginate.
+
+---
+
+## Iterating every page
+
+The reliable way to iterate all pages depends on which response format you accept.
+
+### With JSON-LD (the default)
+
+Follow `hydra:view.hydra:next` until it is absent:
+
+```python
+import requests
+
+url = "https://acme.orgo.space/api/v1/users?itemsPerPage=100"
+headers = {"Api-Token": "..."}
+
+while url:
+    resp = requests.get(url, headers=headers).json()
+    for user in resp["hydra:member"]:
+        process(user)
+    url = resp.get("hydra:view", {}).get("hydra:next")
+    if url and not url.startswith("http"):
+        # Hydra returns relative URLs; join against the host
+        url = f"https://acme.orgo.space{url}"
+```
+
+### With plain JSON
+
+You do not get totals or next-page links — increment `page` until the response is shorter than `itemsPerPage`:
+
+```python
+page = 1
+per_page = 100
+while True:
+    resp = requests.get(
+        f"https://acme.orgo.space/api/v1/users?page={page}&itemsPerPage={per_page}",
+        headers={"Api-Token": "...", "Accept": "application/json"}
+    ).json()
+    for user in resp:
+        process(user)
+    if len(resp) < per_page:
+        break
+    page += 1
+```
+
+<Tip>
+For long-running exports, prefer JSON-LD — `hydra:totalItems` lets you display progress and `hydra:next` is a stable signal that the server still has more rows.
+</Tip>
+
+---
+
+## Filtering
+
+Filters are query-string parameters. The available filters differ per resource and are listed under each endpoint's **Parameters** section in the reference.
+
+### Exact-value filter
+
+```bash
+GET /api/v1/users?status=ACTIVE
+GET /api/v1/events?isPublic=true
+```
+
+### Filter by relation (IRI)
+
+When filtering by a relation, pass the related resource's IRI:
+
+```bash
+GET /api/v1/users?localCenter=/api/v1/local_centers/4
+GET /api/v1/event_attends?event=/api/v1/events/9c4f...
+```
+
+You can also pass just the ID — the server resolves both shapes:
+
+```bash
+GET /api/v1/users?localCenter=4
+```
+
+### Multi-value (OR)
+
+Repeat the parameter to filter against any of several values:
+
+```bash
+GET /api/v1/users?localCenter[]=4&localCenter[]=7&localCenter[]=12
+```
+
+Returns users in local center 4, 7, *or* 12.
+
+### Keyword search
+
+Most user-facing collections support a `keyword` parameter for full-text search across the most-relevant fields:
+
+```bash
+GET /api/v1/users?keyword=patterson
+GET /api/v1/events?keyword=annual+meeting
+```
+
+### Date range
+
+Date filters use the `[before]`, `[after]`, `[strictly_before]`, `[strictly_after]` modifiers:
+
+```bash
+GET /api/v1/events?startDate[after]=2026-01-01T00:00:00Z
+GET /api/v1/payments?datePaid[after]=2026-01-01&datePaid[before]=2026-12-31
+```
+
+### Boolean
+
+Use `true` / `false`:
+
+```bash
+GET /api/v1/users?isFullMember=true
+GET /api/v1/events?isPublic=false
+```
+
+### Custom-field filters
+
+User and Contact resources expose a `customFieldValues.value` filter that targets the value column of the custom-fields table. Pair with `customFieldValues.customField` (the custom field IRI) to target a specific field:
+
+```bash
+GET /api/v1/users?customFieldValues.customField=/api/v1/custom_fields/8&customFieldValues.value=Vegetarian
+```
+
+---
+
+## Ordering
+
+Use `order[field]=asc|desc`. Order by multiple fields by repeating the parameter:
+
+```bash
+# Single field, descending
+GET /api/v1/events?order[startDate]=desc
+
+# Two fields — first by status, then by name
+GET /api/v1/events?order[status]=asc&order[name]=asc
+
+# By a related resource's field
+GET /api/v1/users?order[localCenter.name]=asc&order[lastName]=asc
+```
+
+The default order varies per resource (usually `dateCreated` descending for "feed" resources like Events and Newsletters, alphabetic for reference data).
+
+---
+
+## Combining filters, ordering, and pagination
+
+Stack them with `&`:
+
+```bash
+GET /api/v1/users?status=ACTIVE
+              &localCenter=/api/v1/local_centers/4
+              &keyword=james
+              &order[lastName]=asc
+              &page=1
+              &itemsPerPage=50
+```
+
+URL-encode parameter values that contain spaces or special characters (`?keyword=annual%20meeting`). Most HTTP clients do this automatically.
+
+---
+
+## Performance notes
+
+- Collection endpoints fetch and serialize each row's full read group. For large datasets, prefer narrow filters before broad ones (`?status=ACTIVE` shrinks the row count *before* any extra joins).
+- `itemsPerPage=100` is the maximum — larger requests return at most 100 and the rest must be paginated.
+- Sorting by a non-indexed column on a large collection can be slow. If a sort feels slow, check whether the column is documented as filterable — those are guaranteed indexed.
+
+---
+
+## Related
+
+- [Content types](/api-reference/concepts/content-types) — the Hydra envelope shape used in JSON-LD pagination
+- [Errors](/api-reference/concepts/errors) — what bad filter / order values produce

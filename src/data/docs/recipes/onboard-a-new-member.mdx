@@ -1,0 +1,166 @@
+---
+title: 'Onboard a new member'
+description: 'End-to-end membership application — from a new contact filling in the form to a fully active member with role and fees'
+---
+
+This walkthrough takes a prospective member from their first form submission to fully active member, including identity verification, document signing, and admin approval. It chains five endpoints across the [Adhesion](/api-reference/adhesion) and [User](/api-reference/user) resources.
+
+Who is this for: integrations that surface Orgo's adhesion flow inside a third-party site (e.g. your organization's marketing page), or admin tools that drive members through the funnel programmatically.
+
+---
+
+## What you'll end up with
+
+```
+1. Adhesion created      (NEW)        — applicant fills the form
+2. ID document uploaded  (NEW)        — OCR runs, identity record created
+3. Signed PDF uploaded   (NEW)        — required for HR review
+4. Submitted for review  (PENDING)    — HR notified by email
+5. Admin transitions     (VALIDATED → SUCCESS)
+                                      — MEMBER role assigned, fee activated, welcome email sent
+```
+
+Each step is one API call. Status transitions are explicit — Orgo does not silently advance the application.
+
+---
+
+## Step 1 — Create the draft adhesion
+
+The applicant fills in their personal data. From your integration, that becomes a `POST` to `/api/v1/adhesion/create`. The application is created in `NEW` status, editable, and not yet visible to HR.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/adhesion/create \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Sarah",
+    "lastName": "O'\''Connor",
+    "email": "sarah.oconnor@example.com",
+    "dateBirth": "1995-09-08T00:00:00+00:00",
+    "phoneNumber": "+1 617 555 0177",
+    "address": "456 Commonwealth Ave, Boston, MA 02215",
+    "motivation": "I want to contribute to local civic projects.",
+    "localCenter": "/api/v1/local_centers/4"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": 91,
+  "status": "NEW",
+  "firstName": "Sarah",
+  "lastName": "O'Connor",
+  "hasIdDocument": false,
+  "hasSignedDocument": false,
+  "canBeSubmitted": false
+}
+```
+
+Note `canBeSubmitted: false` — that flips to `true` only after both documents (ID + signed) are uploaded.
+
+<Tip>
+If your integration lets users save and return later (multi-session form), you can `PATCH /api/v1/adhesion/update/{id}` repeatedly until they're ready. Updates are only allowed while the adhesion is in `NEW`.
+</Tip>
+
+---
+
+## Step 2 — Upload an ID document
+
+ID verification is mandatory. The upload triggers OCR, which extracts personal data into an `Identity` record attached to the application.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/adhesion/91/upload-id \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -F "idMedia=@/path/to/passport.pdf"
+```
+
+The OCR runs asynchronously — the response returns immediately with `hasIdDocument: true`, but the extracted fields appear on the `Identity` record a few seconds later. Polling `GET /api/v1/identity/{id}` will show OCR progress.
+
+<Note>
+Replacing an existing ID document is supported — re-upload the same endpoint and the previous file plus its OCR data is discarded.
+</Note>
+
+---
+
+## Step 3 — Upload the signed adhesion form
+
+The applicant downloads the pre-filled PDF (you can render the template yourself, or hit `GET /api/v1/adhesion/{id}/pdf` to grab the official one), signs it, and uploads the signed version back.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/adhesion/91/upload-signed \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -F "signedMedia=@/path/to/signed-adhesion.pdf"
+```
+
+After this call, the adhesion's `canBeSubmitted` flag flips to `true`.
+
+---
+
+## Step 4 — Submit for HR review
+
+Once both documents are in place, transition the application from `NEW` to `PENDING`. This sends an email to the responsible HR admin.
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/adhesion/91/send \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+A `409 Conflict` here means one of the documents is missing — check `hasIdDocument` and `hasSignedDocument` on the adhesion first.
+
+After this point, the applicant cannot edit the application themselves. HR can still record interview notes via `PATCH /api/v1/adhesion/{id}/interview`.
+
+---
+
+## Step 5 — Admin transitions to approval
+
+HR reviews the application, optionally records interview notes, and transitions the status. Each transition has side effects.
+
+| Status | When to use | Side effects |
+|---|---|---|
+| `VALIDATED` | Documents check out, data verified | Confirmation email to applicant |
+| `INTERVIEWED` | Interview complete (between VALIDATED and SUCCESS) | None |
+| `REJECTED` | Application denied | Rejection email to applicant; terminal state |
+| `SUCCESS` | Approved | `MEMBER` role assigned, fee activated, welcome email sent |
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/adhesion/91/status \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"status": "SUCCESS"}'
+```
+
+After `SUCCESS`, the linked `User` is now `ACTIVE`, the membership fee is active, and they can log in.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="The adhesion submitted but HR never saw the email">
+    The email goes to the admin marked as responsible HR for the applicant's local center — not to a blanket inbox. Check **Settings → Users → Permissions** that at least one admin has `HR_LOCAL` on the local center the applicant chose. If none, no email is sent (and `409` is returned by `send`).
+  </Accordion>
+
+  <Accordion title="OCR extracted the wrong birth date / address">
+    The OCR fills the `Identity` record, not the `Adhesion` itself. The applicant's submitted form fields stay as-is; HR sees both side by side in the admin UI. You can correct via `PATCH /api/v1/identity/{id}/update-data`.
+  </Accordion>
+
+  <Accordion title="My applicant is a child — do I use this flow?">
+    No. For minors, use the family-member flow: `POST /api/v1/register-child` against a parent's authenticated session. This skips ID upload and parental adhesion entirely; the child inherits parent membership.
+  </Accordion>
+
+  <Accordion title="Can I skip the documents for a hand-vetted applicant?">
+    HR with `HR_TENANT` permission can create the User directly: `POST /api/v1/users` followed by `POST /api/v1/user_roles` to assign `MEMBER`. Skip the adhesion altogether. The cost is no audit trail of the application.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — subscribe to `user.created` so your CRM is updated the moment the adhesion succeeds
+- [Issue and track contracts](/api-reference/recipes/issue-and-track-contracts) — assign the membership agreement after the User is activated
+- [Process payments](/api-reference/recipes/process-payments) — collect the first membership fee

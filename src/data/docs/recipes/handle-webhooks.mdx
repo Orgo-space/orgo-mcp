@@ -1,0 +1,196 @@
+---
+title: 'Handle webhooks'
+description: 'Build a receiver — subscribe, process events idempotently, replay failures'
+---
+
+This walkthrough implements a production-grade webhook receiver for Orgo events. It covers subscription, idempotent handling, fast responses, and replay.
+
+Who is this for: any integration that needs to react to changes in Orgo in near-real-time (CRM sync, member onboarding automation, payment reconciliation, contract-signed notifications).
+
+---
+
+## Available events
+
+Eighteen event types, across six entity families. Subscribe to any subset.
+
+| Family | Events |
+|---|---|
+| **User** | `user.created`, `user.updated`, `user.deleted` |
+| **Payment** | `product_payment.created`, `product_payment.updated`, `product_payment.deleted` |
+| **Event attendance** | `event_attend.created`, `event_attend.updated`, `event_attend.deleted` |
+| **Contract** | `contract_user.created`, `contract_user.updated`, `contract_user.deleted` |
+| **Role** | `user_role.created`, `user_role.updated`, `user_role.deleted` |
+| **Contact** | `contact.created`, `contact.updated`, `contact.deleted` |
+
+---
+
+## Step 1 — Subscribe
+
+Pick the events you care about and an HTTPS endpoint you control.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/webhook_subscriptions \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-app.example.com/webhooks/orgo",
+    "events": [
+      "user.created",
+      "product_payment.created",
+      "product_payment.updated"
+    ],
+    "secret": "whsec_a3f8b2c4d6e8f1a3b5c7d9e1f3a5b7c9",
+    "active": true,
+    "description": "Sync members and payments into our CRM."
+  }'
+```
+
+The `secret` is yours to choose — a 32-byte random string is standard. Orgo uses it to sign each delivery so you can verify the payload came from Orgo.
+
+Response includes the subscription ID — store it; you'll need it for delivery-log lookups.
+
+---
+
+## Step 2 — Receive the delivery
+
+Each event is delivered as an HTTPS `POST` with a JSON body and these headers:
+
+| Header | Purpose |
+|---|---|
+| `X-Webhook-Event` | The event type — e.g. `user.created` |
+| `X-Webhook-Delivery` | Unique delivery ID — log this to correlate with the Orgo dashboard |
+| `X-Webhook-Timestamp` | Unix timestamp of when the delivery was sent |
+| `User-Agent` | `OrgoWebhook/1.0` |
+
+Body shape (Stripe-inspired):
+
+```json
+{
+  "id": "wh_evt_67aa128c2f4a",
+  "event": "user.created",
+  "api_version": "2024-01",
+  "created": 1735689600,
+  "tenant_id": 1,
+  "request": {
+    "id": "req_8c2f4a67aa12"
+  },
+  "object": {
+    "@id": "/api/v1/users/42",
+    "id": 42,
+    "firstName": "James",
+    "lastName": "Patterson",
+    "email": "james.patterson@example.com",
+    "status": "ACTIVE"
+  },
+  "previous_attributes": null,
+  "is_update": false,
+  "entity_type": "user",
+  "operation": "created"
+}
+```
+
+For `*.updated` events, `previous_attributes` carries the diff — fields not mentioned didn't change. This is enough to detect specific transitions ("user just unsubscribed", "payment just succeeded") without comparing to a stored snapshot.
+
+---
+
+## Step 3 — Be idempotent
+
+Orgo may deliver the same event twice — retries on transient failures, network races on at-least-once delivery. Your handler must be safe to call repeatedly with the same payload.
+
+The simplest pattern: a `processed_deliveries` table keyed by `id` (the top-level event ID, e.g. `wh_evt_67aa128c2f4a`):
+
+```python
+def handle_event(payload: dict) -> None:
+    delivery_id = payload["id"]
+    with db.transaction():
+        if db.processed_deliveries.exists(delivery_id):
+            return  # already handled, no-op
+        db.processed_deliveries.insert(delivery_id, processed_at=now())
+        dispatch(payload)
+```
+
+Insert the row *inside the same transaction* as the side effect, so a crash mid-way doesn't leave the row inserted without the effect. If the effect is in a different system (CRM API call), insert the row only after the effect succeeds.
+
+---
+
+## Step 4 — Respond fast
+
+Orgo waits up to 30 seconds for a response before treating the delivery as failed. Long-running work (sending a follow-up email, querying a slow downstream API) should go into a background queue. The webhook handler's job is to acknowledge receipt and durably queue the work — not perform it.
+
+```python
+@app.post("/webhooks/orgo")
+def receive():
+    payload = request.get_json()
+    queue.enqueue("process_orgo_event", payload)   # < 50ms
+    return "", 200
+```
+
+Return any 2xx; Orgo doesn't care about the body.
+
+---
+
+## Step 5 — Test before going live
+
+The test endpoint fires a synthetic event of your chosen type to the subscription URL:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/webhook_subscriptions/3/test \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "user.created"}'
+```
+
+The synthetic payload uses fixture data (not real user data) but carries the same headers and shape your handler will see in production. Use it in CI to validate end-to-end delivery.
+
+---
+
+## Step 6 — Replay failed deliveries
+
+Every delivery attempt — success or failure — is logged. To list:
+
+```bash
+curl https://acme.orgo.space/api/v1/webhook_subscriptions/3/delivery_logs \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+For each failed delivery, the response includes the original payload — you can re-process it locally without needing Orgo to re-deliver. Logs are retained for ~90 days.
+
+---
+
+## Retry behavior
+
+| Trigger | Behavior |
+|---|---|
+| Receiver returns 2xx | Marked delivered, no retries |
+| Receiver returns non-2xx | Retry up to 3 times with exponential backoff (max ~10 minutes between attempts) |
+| Receiver takes >30s | Treated as failed; retried |
+| Receiver TLS error | Treated as failed; retried |
+| All retries fail | Marked permanently failed; appears in delivery logs |
+
+The subscription itself is *not* automatically deactivated on repeated failures — your monitoring should watch for high failure rates and either auto-pause or page on-call.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="Deliveries are arriving out of order">
+    Orgo doesn't guarantee delivery order across event types. The `created` timestamp on each event lets you reconstruct order — sort by `created` before processing if order matters. For per-resource ordering ("two updates to the same user"), use `previous_attributes` to detect skipped transitions.
+  </Accordion>
+
+  <Accordion title="The same event fired twice — but for different tenants in my multi-tenant CRM">
+    Always route by `tenant_id` in the payload, not by the subscription ID. If a single CRM serves multiple Orgo tenants, each tenant should create its own subscription, and your receiver should route incoming events to the right CRM tenant based on `payload['tenant_id']`.
+  </Accordion>
+
+  <Accordion title="Can I subscribe to all events with a wildcard?">
+    Not currently — list explicit event types in the `events` array. The full list is in the [Webhooks concept page](/api-reference/concepts/webhooks). Subscribing to events that don't yet exist is harmless but won't catch new types if Orgo adds them — patch your subscription when new events ship.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Webhooks (concept)](/api-reference/concepts/webhooks) — the high-level reference
+- [Sync your CRM with Orgo](/api-reference/recipes/sync-your-crm-with-orgo) — webhooks in context of a full CRM sync
+- [Process payments](/api-reference/recipes/process-payments) — using `product_payment.updated` to drive payment reconciliation

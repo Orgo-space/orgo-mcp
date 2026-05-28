@@ -1,0 +1,160 @@
+---
+title: 'Send a newsletter campaign'
+description: 'Compose, segment, and send a newsletter — and clone it to non-openers a week later'
+---
+
+This walkthrough drafts a newsletter, targets a specific audience, sends it, and demonstrates a follow-up pattern (re-sending to people who didn't open). It uses the [Newsletter](/api-reference/newsletter) and [Contact](/api-reference/contact) resources.
+
+Who is this for: marketing-automation pipelines that compose campaigns from a CRM, A/B testers running variations, or admin tools that schedule sends ahead of time.
+
+---
+
+## Step 1 — Draft the newsletter
+
+Newsletters are owned by a `Unit` — usually a local center or the tenant root. The audience is implicitly everyone in that unit who has newsletter opt-in.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/newsletters \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "January 2026 — Boston Update",
+    "subject": "What'\''s happening at Civic Collective in January",
+    "fromName": "Civic Collective — Boston",
+    "fromEmail": "boston@example.com",
+    "replyToEmail": "boston@example.com",
+    "unit": "/api/v1/units/4",
+    "content": "<h1>January Update</h1><p>Hello {{firstName}},</p><p>Here'\''s what'\''s coming up...</p>"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": 44,
+  "uuid": "01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44",
+  "name": "January 2026 — Boston Update",
+  "status": "DRAFT",
+  "estimatedRecipientCount": 312
+}
+```
+
+`estimatedRecipientCount` is the count of recipients the current audience filter would target *right now*. It is recalculated each time you fetch the newsletter.
+
+### Placeholders
+
+`{{firstName}}`, `{{lastName}}`, `{{email}}` and any tenant custom field are resolved per recipient. Use them anywhere in `content` and they're substituted at send time.
+
+---
+
+## Step 2 — Preview and test-send
+
+Always send a test to yourself first.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/email_templates/send-test \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "newsletter": "/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44",
+    "toEmail": "james.patterson@example.com"
+  }'
+```
+
+Check the test email rendered correctly — placeholder substitution, links, images, and unsubscribe footer.
+
+---
+
+## Step 3 — Choose: schedule or send now
+
+### Send immediately
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44/send \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+Status flips to `SENT`. The actual delivery is queued — large campaigns take a few minutes to flush through SES.
+
+### Schedule for later
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44/schedule \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"sendDate": "2026-01-20T09:00:00-05:00"}'
+```
+
+Status flips to `SCHEDULED` and the worker picks it up at the specified time.
+
+---
+
+## Step 4 — Resend to non-openers (one week later)
+
+A standard pattern: wait 5-7 days after the initial send, then re-send (with a new subject line) only to people who haven't opened.
+
+First check how many would be re-targeted:
+
+```bash
+curl https://acme.orgo.space/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44/non-openers-count \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+Then clone the original into a new draft targeting only those non-openers:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44/clone-non-openers \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Reminder — what'\''s happening at Civic Collective in January"
+  }'
+```
+
+The clone keeps the body content but you can edit before sending. Then `PATCH /api/v1/newsletters/{uuid}/send` as usual.
+
+---
+
+## Step 5 — Read engagement statistics
+
+Once the send completes (typically a few minutes after triggering), opens and clicks start streaming in. Fetch them on the newsletter resource:
+
+```bash
+curl https://acme.orgo.space/api/v1/newsletters/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f44 \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+The response includes `recipientCount`, `openCount`, `clickCount`, and `unsubscribeCount`.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="My newsletter went to fewer people than I expected">
+    Two filters apply: (1) the `Unit` membership (only people in or under that unit), (2) `isNewsletterSubscribed: true` on each recipient (User or Contact). Run the audience filter manually with `GET /api/v1/users?unit=...&isNewsletterSubscribed=true` to see the same count.
+  </Accordion>
+
+  <Accordion title="Placeholders showed up as `{{firstName}}` instead of names">
+    Placeholders are case-sensitive and must match exactly. `{{FirstName}}` won't work; neither will `{{ firstName }}` (with spaces). If a recipient's field is null, the placeholder resolves to an empty string — consider wrapping with HTML so empty fields don't leave dangling punctuation.
+  </Accordion>
+
+  <Accordion title="The send is stuck at SENT but nobody got the email">
+    SES has per-tenant sending limits. New tenants are sandboxed (50 emails/day, verified-recipient only) until granted production access. Check `Settings → Developers → Email` for the current quota. Contact support to lift sandbox.
+  </Accordion>
+
+  <Accordion title="Can I A/B test subject lines?">
+    Not directly — there's no first-class A/B testing UI. The pattern is: send the campaign to a 10% sample (filter the audience tighter), wait, compare open rates against a held-back variant, then send the winner to the rest.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Sync your CRM with Orgo](/api-reference/recipes/sync-your-crm-with-orgo) — keep contacts subscribed in sync with your CRM source-of-truth
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — react to `contact.updated` when someone unsubscribes
+- [Rate limits](/api-reference/concepts/rate-limits) — newsletter sends carry email-cost rate limits

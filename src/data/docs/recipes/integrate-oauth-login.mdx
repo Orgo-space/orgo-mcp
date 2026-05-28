@@ -1,0 +1,223 @@
+---
+title: 'Integrate "Log in with Orgo" (OAuth)'
+description: 'End-to-end OAuth 2.0 Authorization Code flow — register the app, redirect, exchange, fetch user info'
+---
+
+This walkthrough adds "Log in with Orgo" to a third-party application. It uses the OAuth 2.0 Authorization Code flow (with PKCE for browser apps).
+
+Who is this for: SaaS apps your members use that should not require a second login (member-only forums, member-only deals platforms, internal tools, partner services).
+
+---
+
+## When to use OAuth vs Api-Token
+
+- **Api-Token** — your server acts as itself; the data is yours. Use for backend integrations, dashboards, batch jobs.
+- **OAuth** — your server acts on behalf of an Orgo user; you only see what that user can see. Use when each end-user logs into your app *as themselves*.
+
+If you're building a single integration that consumes "all members of Civic Collective", that's an Api-Token. If you're building a forum where each Orgo member logs in individually, that's OAuth.
+
+---
+
+## Prerequisites
+
+- An admin in the Orgo tenant who can create an OAuth application.
+- A callback URL on your app served over HTTPS (localhost is allowed for development).
+
+---
+
+## Step 1 — Register your OAuth application
+
+In the Orgo admin UI: **Settings → Developers → OAuth Applications → Create Application**.
+
+You'll provide:
+
+| Field | What to enter |
+|---|---|
+| **Name** | What users see during authorization — "Civic Forum" |
+| **Description** | Internal reference |
+| **Redirect URIs** | Exact callback URLs (one per line) — exact match required |
+| **Scopes** | What data the app can request |
+
+Orgo returns a **Client ID** (public) and a **Client Secret** (one-time, store securely server-side). The Client Secret cannot be retrieved later — rotate by deleting and re-creating if lost.
+
+---
+
+## Step 2 — Redirect the user to authorize
+
+When a user clicks "Log in with Orgo" in your app, redirect them to:
+
+```
+https://app.orgo.space/oauth/authorize
+  ?client_id=YOUR_CLIENT_ID
+  &redirect_uri=https://your-app.example.com/oauth/callback
+  &response_type=code
+  &scope=profile+email+groups
+  &state=<csrf_token>
+```
+
+| Parameter | Purpose |
+|---|---|
+| `client_id` | The Client ID from Step 1 |
+| `redirect_uri` | Must match a registered URI exactly (including trailing slash) |
+| `response_type` | Always `code` |
+| `scope` | Space-separated list — see [scopes](#available-scopes) |
+| `state` | Random string you generate per-request; check on callback to prevent CSRF |
+
+For browser-based apps, add PKCE:
+
+```
+&code_challenge=<base64url(sha256(verifier))>
+&code_challenge_method=S256
+```
+
+---
+
+## Step 3 — Receive the callback
+
+Orgo sends the user back to your `redirect_uri` with two parameters:
+
+```
+https://your-app.example.com/oauth/callback?code=<auth_code>&state=<csrf_token>
+```
+
+Verify `state` matches the one you stored, then move on.
+
+---
+
+## Step 4 — Exchange the code for an access token
+
+Do this *server-side* — the Client Secret must never reach the browser. Form-encoded body, not JSON.
+
+```bash
+curl -X POST https://app.orgo.space/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=$AUTH_CODE" \
+  -d "client_id=$CLIENT_ID" \
+  -d "client_secret=$CLIENT_SECRET" \
+  -d "redirect_uri=https://your-app.example.com/oauth/callback"
+```
+
+For PKCE, replace `client_secret` with `code_verifier`:
+
+```bash
+curl -X POST https://app.orgo.space/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=$AUTH_CODE" \
+  -d "client_id=$CLIENT_ID" \
+  -d "code_verifier=$PKCE_VERIFIER" \
+  -d "redirect_uri=https://your-app.example.com/oauth/callback"
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "f3c7a..."
+}
+```
+
+---
+
+## Step 5 — Use the access token
+
+The access token works as a normal Bearer JWT.
+
+```bash
+curl https://app.orgo.space/oauth/userinfo \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "sub": "42",
+  "name": "James Patterson",
+  "email": "james.patterson@example.com",
+  "picture": "https://cdn.orgo.space/users/42/avatar.jpg",
+  "groups": ["main-group", "boston-local"],
+  "roles": ["ROLE_USER", "ROLE_MEMBER"]
+}
+```
+
+`sub` is the user's stable Orgo ID — use this as the primary key in your app's users table. Email can change; `sub` cannot.
+
+You can also use the same access token to call other API endpoints scoped to the user's permissions:
+
+```bash
+curl https://acme.orgo.space/api/v1/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+---
+
+## Step 6 — Refresh expired tokens
+
+Access tokens expire after roughly an hour (`expires_in` in the original response). Use the refresh token to get a new pair without sending the user back through the consent screen:
+
+```bash
+curl -X POST https://app.orgo.space/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=$REFRESH_TOKEN" \
+  -d "client_id=$CLIENT_ID" \
+  -d "client_secret=$CLIENT_SECRET"
+```
+
+Cache the new pair (always). Do not call refresh on every API request — only when a request returns `401`.
+
+---
+
+## Available scopes
+
+| Scope | What it grants access to |
+|---|---|
+| `profile` | Name, profile picture, display name |
+| `email` | Email address |
+| `groups` | Group + local-center memberships |
+| `roles` | User roles (`ROLE_USER`, `ROLE_MEMBER`, `ROLE_ADMIN`, etc.) |
+
+Request only what you need — fewer scopes makes the consent screen shorter and clearer.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="`invalid_redirect_uri` on the authorize call">
+    The `redirect_uri` parameter must match a registered URI *exactly*. Watch for: trailing slashes, `http` vs `https`, port numbers (8080 vs 443), and URL encoding of query strings. Register every variant you use (dev, staging, prod) at creation.
+  </Accordion>
+
+  <Accordion title="The user authorized but I never received the code">
+    Check that your callback handler is reachable from Orgo's servers (not localhost-only behind a firewall) and serves HTTPS (except for `localhost` URIs which can use HTTP). Check browser network tab — Orgo issues a `302` to the callback; if your handler 500s, it shows there.
+  </Accordion>
+
+  <Accordion title="Token exchange returns `invalid_client`">
+    Three causes: wrong `client_id`, wrong `client_secret`, or the secret was rotated (delete + recreate the app and re-store). For PKCE flows, sending both `client_secret` and `code_verifier` also fails — pick one.
+  </Accordion>
+
+  <Accordion title="The user's groups don't match what I see in the Orgo UI">
+    The `groups` scope returns *slug-style* group names, not display names. To resolve to a full `Group` resource, call `GET /api/v1/units?slug=boston-local` separately.
+  </Accordion>
+
+  <Accordion title="My app is a SPA — can I skip the backend entirely?">
+    Use PKCE without a Client Secret. Generate a verifier (random 43-128 chars), hash it with SHA-256, base64url-encode the hash, send the hash as `code_challenge` on authorize, then send the verifier as `code_verifier` on token exchange. The Client Secret stays unused.
+  </Accordion>
+
+  <Accordion title="Tokens revoked on the Orgo side don't immediately expire">
+    Access tokens are stateless JWTs — they remain valid until `exp` regardless of revocation. Refresh tokens are stateful — refreshing a revoked token returns `400 invalid_grant`. For high-security apps, set the access token lifetime shorter via Orgo support and rely on refresh-token revocation as the kill switch.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Authentication](/api-reference/concepts/authentication) — comparison of OAuth vs Api-Token vs JWT vs OTP
+- [OAuth Server](/platform/oauth) — admin-side documentation on managing OAuth applications
+- [Tenancy](/api-reference/concepts/tenancy) — how OAuth tokens carry tenant scope

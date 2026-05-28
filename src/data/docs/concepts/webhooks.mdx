@@ -1,0 +1,179 @@
+---
+title: 'Webhooks'
+description: 'Receive event notifications from Orgo over HTTP — subscribe, verify, handle idempotently'
+---
+
+Orgo can push event notifications to a URL you control. Subscribe to any subset of 18 event types, register an HTTPS endpoint, and Orgo delivers a signed JSON POST every time a matching event happens.
+
+This page is the reference. For a complete walkthrough — including idempotent handling and replay — see [Handle webhooks](/api-reference/recipes/handle-webhooks).
+
+---
+
+## Available events
+
+| Family | Events | When they fire |
+|---|---|---|
+| **User** | `user.created`, `user.updated`, `user.deleted` | New registrations, profile changes, account deletion |
+| **Payment** | `product_payment.created`, `product_payment.updated`, `product_payment.deleted` | Stripe checkout, bank transfer mark-paid, refunds |
+| **Event attendance** | `event_attend.created`, `event_attend.updated`, `event_attend.deleted` | Member RSVPs, confirmations, check-ins, cancellations |
+| **Contract** | `contract_user.created`, `contract_user.updated`, `contract_user.deleted` | Contract assigned, signed, force-resign |
+| **Role** | `user_role.created`, `user_role.updated`, `user_role.deleted` | Permission grants and revocations |
+| **Contact** | `contact.created`, `contact.updated`, `contact.deleted` | CRM contact added, updated, removed |
+
+Every event ships with the full entity snapshot (`object`) and, for updates, a diff (`previous_attributes`). The complete payload schemas are in the [Webhooks section](#webhook-events) of the playground.
+
+---
+
+## Subscribing
+
+Create a subscription via the API or in the admin UI under **Settings → Developers → Webhooks**.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/webhook_subscriptions \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-app.example.com/webhooks/orgo",
+    "events": ["user.created", "product_payment.updated"],
+    "secret": "whsec_a3f8b2c4d6e8f1a3b5c7d9e1f3a5b7c9",
+    "active": true,
+    "description": "Sync new members and payments into our CRM."
+  }'
+```
+
+The `secret` is yours to choose — a 32-byte random string is standard. Orgo uses it to sign each delivery so you can verify the payload came from Orgo.
+
+---
+
+## Payload envelope
+
+Every delivery, regardless of event type, has the same outer shape (Stripe-inspired). Only the `object` and `previous_attributes` differ per event.
+
+```json
+{
+  "id": "wh_evt_67aa128c2f4a",
+  "event": "user.created",
+  "api_version": "2024-01",
+  "created": 1735689600,
+  "tenant_id": 1,
+  "request": {
+    "id": "req_8c2f4a67aa12"
+  },
+  "object": {
+    "@id": "/api/v1/users/42",
+    "id": 42,
+    "firstName": "James",
+    "lastName": "Patterson",
+    "email": "james.patterson@example.com",
+    "status": "NEW"
+  },
+  "previous_attributes": null,
+  "is_update": false,
+  "entity_type": "user",
+  "operation": "created"
+}
+```
+
+| Field | Always present | Notes |
+|---|---|---|
+| `id` | yes | Unique per delivery — **the idempotency key** |
+| `event` | yes | The event type (e.g. `user.created`) |
+| `api_version` | yes | Schema version of the payload (currently `2024-01`) |
+| `created` | yes | Unix timestamp (seconds) when Orgo emitted the event |
+| `tenant_id` | yes | The Orgo tenant ID — use for routing in multi-tenant receivers |
+| `request` | yes | Metadata about the API request that triggered the event |
+| `object` | yes | Snapshot of the entity at the moment of emission |
+| `previous_attributes` | only on `*.updated` | Diff against prior state — `null` on create/delete |
+| `is_update`, `entity_type`, `operation` | yes | Denormalized helpers |
+
+The OpenAPI spec declares a `Webhook.<EventName>` schema for each event type (e.g. `Webhook.UserCreated`) — use these in your typed client for autocomplete and validation.
+
+---
+
+## Delivery headers
+
+| Header | Purpose |
+|---|---|
+| `X-Webhook-Event` | The event type (e.g. `user.created`) |
+| `X-Webhook-Delivery` | Unique delivery ID — log this; you can look it up in the dashboard |
+| `X-Webhook-Timestamp` | Unix timestamp of when this delivery was sent (use for replay-attack defense) |
+| `Content-Type` | `application/json` |
+| `User-Agent` | `OrgoWebhook/1.0` |
+
+---
+
+## Idempotency
+
+Orgo may deliver the same event twice — retries on transient failures, network races on at-least-once delivery. Your handler must be safe to call repeatedly with the same payload.
+
+The simplest pattern: track processed deliveries by `payload["id"]`.
+
+```python
+def handle(payload: dict) -> None:
+    delivery_id = payload["id"]
+    with db.transaction():
+        if db.processed_deliveries.exists(delivery_id):
+            return  # already handled
+        db.processed_deliveries.insert(delivery_id, processed_at=now())
+        dispatch(payload)
+```
+
+Keep delivery IDs for at least 30 days. If you can, insert the dedup row in the same transaction as the side effect — that closes a window where a crash mid-handler leaves the dedup row but not the effect.
+
+---
+
+## Retry behavior
+
+| Trigger | Behavior |
+|---|---|
+| Receiver returns 2xx | Marked delivered. No retries. |
+| Receiver returns non-2xx | Retry up to **3 times** with exponential backoff (up to ~10 minutes between attempts) |
+| Receiver doesn't respond within 30s | Treated as failed; retried |
+| Receiver TLS error | Treated as failed; retried |
+| All retries fail | Marked permanently failed; visible in delivery logs |
+
+The subscription itself is **not** automatically deactivated on repeated failures — your own monitoring should watch for high failure rates.
+
+---
+
+## Delivery logs and replay
+
+Every delivery attempt — success or failure — is logged for ~90 days. To list:
+
+```bash
+curl https://acme.orgo.space/api/v1/webhook_subscriptions/3/delivery_logs \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+For each failed delivery, the original payload is included — replay it locally without needing Orgo to re-deliver.
+
+---
+
+## Testing
+
+Before going live, send a synthetic event to your endpoint:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/webhook_subscriptions/3/test \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "user.created"}'
+```
+
+The synthetic payload uses fixture data (not real user data) but carries the same headers and shape your handler will see in production. Use this in CI to validate end-to-end delivery.
+
+---
+
+## Webhook events
+
+Each event type is declared as a "webhook" in the OpenAPI spec — Mintlify renders them in the playground under a Webhooks section. Click into any event to see its full payload schema, headers, and example.
+
+The 18 events are listed at the top of this page.
+
+---
+
+## Related
+
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — full receiver walkthrough with idempotency and replay
+- [Sync your CRM with Orgo](/api-reference/recipes/sync-your-crm-with-orgo) — webhooks in a real-world sync scenario
+- [Rate limits](/api-reference/concepts/rate-limits) — why webhooks beat polling

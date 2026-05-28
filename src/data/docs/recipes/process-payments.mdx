@@ -1,0 +1,253 @@
+---
+title: 'Process payments'
+description: 'Collect a payment with Stripe checkout, reconcile via webhooks, issue refunds, and handle bank transfers'
+---
+
+This walkthrough covers the full payment lifecycle: card payment via Stripe checkout, payment reconciliation via webhook, refund, and the parallel bank-transfer flow with invoice generation. It uses the [Product](/api-reference/product), [ProductPayment](/api-reference/productpayment), and [Invoice](/api-reference/invoice) resources.
+
+Who is this for: backend integrations that drive the membership fee collection, ticket sales, or donation campaigns; finance-ops tools that automate refunds and reconcile against accounting systems.
+
+---
+
+## Architecture
+
+Orgo doesn't process card data directly — that's Stripe's job. Orgo orchestrates the flow:
+
+```
+1. Create a Product             (or Product already exists from setup)
+2. Generate Stripe checkout URL — Orgo creates the Stripe session
+3. Member pays on Stripe        — Orgo never sees the card
+4. Stripe webhook → Orgo        — payment captured
+5. Orgo webhook → your system   — product_payment.updated fires
+6. You reconcile                — update CRM, send receipt, etc.
+```
+
+Bank-transfer flow is parallel:
+
+```
+1. Issue Invoice                — generates PDF, emails to member
+2. Member sends transfer        — out-of-band
+3. Admin marks as paid          — via UI or API
+4. Orgo webhook → your system   — product_payment.updated fires (same as card)
+```
+
+Same downstream event from your system's perspective. That's deliberate — your reconciliation code handles both cases identically.
+
+---
+
+## Card payment — Stripe checkout
+
+### Step 1 — Generate a checkout URL
+
+For a membership product the member is buying:
+
+```bash
+curl https://acme.orgo.space/api/v1/companies/01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f88/payment-checkout \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+For event-ticket purchases, the checkout URL comes back automatically inside the `EventAttend` response when the event has paid tickets — see [Create and sell event tickets](/api-reference/recipes/create-and-sell-event-tickets).
+
+Response includes a `checkoutUrl`:
+
+```json
+{
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_a1B2c3D4e5F6...",
+  "sessionId": "cs_test_a1B2c3D4e5F6",
+  "expiresAt": "2026-01-15T11:30:00+00:00"
+}
+```
+
+Redirect the user to `checkoutUrl`. Stripe handles the card collection.
+
+### Step 2 — Stripe completes the charge
+
+On Stripe's side, the charge succeeds (or fails). Stripe POSTs to Orgo's webhook at `/api/v1/stripe-webhook`. This is invisible to your integration — Orgo handles it.
+
+Internally, Orgo creates a `ProductPayment` record with `status: SUCCESS` (or `FAILED`).
+
+### Step 3 — React via webhook
+
+Subscribe to `product_payment.updated`:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/webhook_subscriptions \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-app.example.com/webhooks/orgo",
+    "events": ["product_payment.created", "product_payment.updated"],
+    "secret": "whsec_a3f8b2c4d6e8f1a3b5c7d9e1f3a5b7c9"
+  }'
+```
+
+In your handler:
+
+```python
+def handle(payload):
+    if payload["event"] != "product_payment.updated":
+        return
+    if payload["object"]["status"] == "SUCCESS":
+        record_payment_in_accounting(payload["object"])
+        send_thank_you_email(payload["object"]["user"])
+```
+
+See [Handle webhooks](/api-reference/recipes/handle-webhooks) for the full receiver pattern.
+
+---
+
+## Refunding a paid charge
+
+When a member requests a refund (cancelled event, mistaken purchase, dispute settlement), call the refund endpoint:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/product-payment/107/refund \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{
+    "amount": 5000,
+    "reason": "duplicate"
+  }'
+```
+
+`amount` in cents. Omit for a full refund.
+
+`reason` is passed through to Stripe — common values: `duplicate`, `fraudulent`, `requested_by_customer`. Used for Stripe's dispute analytics.
+
+The refund returns immediately with the updated ProductPayment showing `status: REFUNDED`. Stripe processes the actual transfer over the following 5-10 business days.
+
+For partial refunds, call repeatedly until cumulative amount equals the original charge.
+
+<Note>
+Refunds are not reversible. Once issued, the funds are returned to the cardholder. To re-charge, the cardholder must complete a new checkout.
+</Note>
+
+---
+
+## Bank transfer with invoice
+
+For members who pay by bank transfer (corporate memberships, multi-thousand-dollar annual fees, regions where cards are uncommon), the flow is:
+
+### Step 1 — Issue an invoice
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/invoices/create-for-bank-transfer \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "productPrice": "/api/v1/product_prices/22",
+    "billingName": "James Patterson",
+    "billingAddress": "123 Beacon Street, Boston, MA 02108",
+    "billingEmail": "james.patterson@example.com",
+    "vatNumber": null
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": 284,
+  "number": "INV-2026-00284",
+  "status": "PENDING",
+  "amount": 5000,
+  "currency": "USD",
+  "pdfUrl": "https://cdn.orgo.space/invoices/INV-2026-00284.pdf",
+  "dateDue": "2026-02-14T10:30:00+00:00"
+}
+```
+
+A PDF is generated and emailed to `billingEmail`. The member transfers funds to the account printed on the invoice.
+
+### Step 2 — Mark as paid
+
+When you see the transfer hit the bank, mark the invoice:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/invoices/284/mark-as-paid \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{"datePaid": "2026-01-18T14:22:00+00:00"}'
+```
+
+This creates the linked ProductPayment with `status: SUCCESS` and `method: BANK_TRANSFER`. Your webhook receiver sees the same `product_payment.updated` event it sees for card payments.
+
+### Cancellation, void, refund
+
+| Action | Endpoint | When to use |
+|---|---|---|
+| Cancel before payment | `PATCH /api/v1/invoices/cancel-bank-transfer` | Member changed mind; invoice never paid |
+| Void | `PATCH /api/v1/invoices/{id}/void` | Issued in error; correct accounting record |
+| Refund | `PATCH /api/v1/invoices/{id}/refund` | Paid invoice needs to be refunded (creates a credit memo) |
+
+### Resending the invoice email
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/invoices/284/send-email \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+Useful when the member's accounts-payable department asks for a copy.
+
+---
+
+## Reporting and reconciliation
+
+### All payments in a date range
+
+```bash
+curl "https://acme.orgo.space/api/v1/product_payments?datePaid[after]=2026-01-01&datePaid[before]=2026-01-31&order[datePaid]=asc" \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Accept: application/ld+json"
+```
+
+`hydra:totalItems` gives you the count, the array gives you the data. Paginate as usual.
+
+### Sum of successful payments
+
+There's no aggregation endpoint — fetch the page and sum locally. For monthly reporting, this is fine. For dashboards refreshing every minute, cache the result.
+
+### Stuck-pending invoices
+
+```bash
+curl "https://acme.orgo.space/api/v1/invoices?status=PENDING&dateDue[before]=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+Returns invoices past their due date but still unpaid — your dunning list.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="The checkout URL returns Stripe's 'no account configured' error">
+    Stripe is connected at the local-center level (preferred) or the tenant level. The product's `unit` determines which Stripe account is used. If the unit doesn't have Stripe connected, checkout creation fails. Check **Settings → Local Centers → [Center] → Payments**.
+  </Accordion>
+
+  <Accordion title="My ProductPayment shows SUCCESS but I never saw the webhook">
+    Two causes: (1) the subscription wasn't `active` at the time of the event — check the subscription state; (2) the receiver returned non-2xx 3 times in a row, so delivery is in the failed log. Hit `GET /api/v1/webhook_subscriptions/{id}/delivery_logs` and replay.
+  </Accordion>
+
+  <Accordion title="Refund returned 200 but the cardholder hasn't received the money">
+    Stripe processes refunds asynchronously — typically 5-10 business days for cards, longer for some debit cards and most international cards. Check the refund status in Stripe's dashboard for the authoritative answer.
+  </Accordion>
+
+  <Accordion title="Bank transfer invoice has the wrong VAT — can I edit it after issuing?">
+    No. Invoices are immutable once issued (legal requirement). Void the existing invoice and issue a corrected one. The void preserves the audit trail; the new invoice carries a new number.
+  </Accordion>
+
+  <Accordion title="Can I charge a saved card without redirecting to Stripe?">
+    Not via this endpoint. Orgo's payment surface routes everything through Stripe's hosted checkout. For card-on-file MOTO/subscription charges, use the SubscriptionProfile resource — Stripe handles the recurring billing.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — react to payment events
+- [Create and sell event tickets](/api-reference/recipes/create-and-sell-event-tickets) — payment in the ticketing context
+- [Sync your CRM with Orgo](/api-reference/recipes/sync-your-crm-with-orgo) — push payment events into your accounting system

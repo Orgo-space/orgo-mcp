@@ -1,0 +1,203 @@
+---
+title: 'Issue and track contracts'
+description: 'Create a contract template, assign it to members, collect signatures, and bulk-apply default signatures'
+---
+
+This walkthrough covers the full contract lifecycle — from a reusable template definition to per-member signed PDFs stored in S3. It uses the [Contract](/api-reference/contract) and [ContractUser](/api-reference/contractuser) resources.
+
+Who is this for: legal-ops integrations that need to provision new contract templates (annual member agreement, NDA, parental-consent form), bulk-assign them, or programmatically chase signatures.
+
+---
+
+## Concepts
+
+- A **Contract** is a *template* — content, placeholders, signature requirements. Tenant-scoped, reusable.
+- A **ContractUser** is one *instance* of a contract assigned to a specific User or Contact. It carries the signature state, the rendered placeholder values, and the signed PDF.
+- A **Placeholder** like `{{firstName}}` is resolved at assignment time from the recipient's profile + any custom fields you map.
+
+---
+
+## Step 1 — Create a contract template
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/contracts \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Member Agreement 2026",
+    "content": "<h1>Civic Collective — Member Agreement</h1><p>This agreement is between Civic Collective and {{firstName}} {{lastName}}, dated {{dateSigned}}.</p><p>The member agrees to abide by the code of conduct...</p>",
+    "unit": "/api/v1/units/4",
+    "requiresDigitalSignature": true,
+    "displayInProfile": true
+  }'
+```
+
+The response includes a `hash` field — a unique fingerprint of the contract's content. If you later edit the content materially, you'll need to regenerate the hash via `PATCH /api/v1/contracts/{id}/ask-resign` (see below).
+
+```json
+{
+  "id": 9,
+  "name": "Member Agreement 2026",
+  "hash": "a3f8b2c4d6e8f1a3b5c7d9e1f3a5b7c9",
+  "requiresDigitalSignature": true,
+  "displayInProfile": true,
+  "unit": { "id": 4, "name": "Boston" }
+}
+```
+
+### `displayInProfile`
+
+When `true`, the contract automatically shows up in the profile of every User in the assigned `Unit`. They can self-serve a signature from their member dashboard. When `false`, contracts only appear after explicit assignment via Step 2.
+
+---
+
+## Step 2 — Assign the contract to a member
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/contract_users \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contract": "/api/v1/contracts/9",
+    "user": "/api/v1/users/42",
+    "validityStartDate": "2026-01-15",
+    "validityEndDate": "2027-01-14"
+  }'
+```
+
+Either `user` or `contact` is required (not both). For Contacts who haven't yet become Users, contracts can still be assigned — they sign via a magic link.
+
+Response:
+
+```json
+{
+  "id": 63,
+  "status": "UNSIGNED",
+  "contract": { "id": 9, "name": "Member Agreement 2026" },
+  "user": { "id": 42, "fullName": "James Patterson" },
+  "validityStartDate": "2026-01-15",
+  "validityEndDate": "2027-01-14"
+}
+```
+
+Member receives an email with a sign-now link.
+
+---
+
+## Step 3 — Sign membership contract in advance
+
+For the membership-defaults contract (configured on the tenant), there's a shortcut endpoint that creates-or-fetches an unsigned ContractUser for the calling user:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/sign-membership-contract-in_advance \
+  -H "Authorization: Bearer $ORGO_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Useful in flows where a member is pre-signing as part of registration. If an unsigned instance already exists, the existing one is returned (no duplicates).
+
+---
+
+## Step 4 — Bulk mark as signed (paper signatures)
+
+For members who signed on paper, mark the contract complete without requiring a digital signature:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/contract_users/mark_as_signed \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contractUsers": ["/api/v1/contract_users/63", "/api/v1/contract_users/64"],
+    "dateSigned": "2026-01-15T10:00:00+00:00"
+  }'
+```
+
+This sets status to `COMPLETE`, locks the record, and records the calling admin as `signedBy`. Useful for backfilling pre-Orgo contracts.
+
+---
+
+## Step 5 — Apply admin default signature
+
+For contracts that require an admin co-signature (after the member signs), Orgo can apply a pre-stored default admin signature in one call:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/contract_users/63/use-default-signature \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+This:
+- Validates a default signature exists for the tenant
+- Validates the contract hasn't already been admin-signed
+- Sets the admin signature, locks the record, records the signature date
+- Generates a signed PDF, uploads to S3
+- Generates a contract certificate
+
+The admin signature must be uploaded once via the tenant settings before this works.
+
+---
+
+## Step 6 — Force re-signing after content changes
+
+When you materially edit a Contract's content, existing unsigned ContractUsers become stale (their placeholder values may no longer match). To regenerate the contract hash and cancel all unsigned instances:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/contracts/9/ask-resign \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+This sets a new `hash` on the Contract and marks every unsigned ContractUser as canceled (with timestamps + canceledBy). Already-signed instances are untouched. The next assignment cycle generates fresh ContractUser instances with the new content.
+
+---
+
+## Listing and reporting
+
+### Members with unsigned contracts
+
+```bash
+curl "https://acme.orgo.space/api/v1/contract_users?status=UNSIGNED&contract=/api/v1/contracts/9" \
+  -H "Api-Token: $ORGO_API_TOKEN"
+```
+
+### Member's contracts in their profile
+
+```bash
+curl https://acme.orgo.space/api/v1/my_contracts \
+  -H "Authorization: Bearer $ORGO_JWT"
+```
+
+Returns contracts the authenticated user has signed plus contracts marked `displayInProfile: true` for groups they belong to.
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="Placeholders rendered as `{{firstName}}` literally in the signed PDF">
+    The resolution happens once when the ContractUser is created (or refreshed). If the member's profile is missing `firstName`, the placeholder is replaced with an empty string. Check the user's profile first; for custom-field placeholders, ensure the field is mapped on the Contract template.
+  </Accordion>
+
+  <Accordion title="Delete contract returns 409 — `contract has signed instances`">
+    Contract templates with any signed ContractUser cannot be deleted (audit trail). Either delete the signed instances first (rarely advised), archive the contract by setting `displayInProfile: false` and unassigning, or simply leave it in place.
+  </Accordion>
+
+  <Accordion title="The signed PDF is missing the admin signature">
+    `use-default-signature` requires the tenant to have a stored admin-signature image, configured under **Settings → Branding → Default Signature**. If missing, the endpoint returns `400`. The admin signature appears next to the date on the rendered PDF.
+  </Accordion>
+
+  <Accordion title="Can I attach attachments to a contract (annexes, riders)?">
+    Not as separate fields. The convention is to embed annexes inline in the `content` HTML or include them as external links. The signed-PDF generation captures whatever is in `content`.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Onboard a new member](/api-reference/recipes/onboard-a-new-member) — pair contract assignment with the adhesion success
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — `contract_user.updated` fires on every signature
+- [Manage local centers and permissions](/api-reference/recipes/manage-local-centers-and-permissions) — scoping contracts per local center

@@ -1,0 +1,189 @@
+---
+title: 'Create and sell event tickets'
+description: 'From draft event to ticketed registration with Stripe checkout — five endpoints'
+---
+
+This walkthrough creates a ticketed event, attaches paid ticket types via Stripe, publishes the landing page, and processes a registration. The full chain covers the [Event](/api-reference/event), [Product](/api-reference/product), and [EventAttend](/api-reference/eventattend) resources.
+
+Who is this for: integrations that need to provision events programmatically (recurring training, partner-organized meetups, automated festival setup) or surface Orgo's ticketing into a custom site.
+
+---
+
+## Prerequisites
+
+- Stripe connected at the tenant or local-center level (see [Stripe integration](/platform/fees/stripe-integration)).
+- An admin Api-Token with at least `HR_LOCAL` on the relevant local center.
+
+---
+
+## Step 1 — Create the event as a draft
+
+Drafts are invisible to members and the public. You can edit freely while in `DRAFT`.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/events \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Annual General Meeting 2026",
+    "description": "Quarterly chapter meeting with working-group breakouts and a board Q&A.",
+    "dateTimeBegin": "2026-03-15T18:00:00+00:00",
+    "dateTimeEnd": "2026-03-15T21:00:00+00:00",
+    "timezone": "America/New_York",
+    "location": "Boston Public Library, 700 Boylston St, Boston, MA 02116",
+    "unit": "/api/v1/units/4",
+    "isPublic": true,
+    "maxCapacity": 200,
+    "hasEventTicketing": true,
+    "requiresRegistrationForm": true,
+    "status": "DRAFT"
+  }'
+```
+
+The response carries both an integer `id` (used in legacy paths) and a `uuid` (used in modern paths like `/api/v1/events/{uuid}`). Keep the `uuid` for the rest of the flow.
+
+```json
+{
+  "id": 12,
+  "uuid": "01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
+  "name": "Annual General Meeting 2026",
+  "status": "DRAFT",
+  "slug": "annual-general-meeting-2026",
+  "hasEventTicketing": true
+}
+```
+
+---
+
+## Step 2 — Create ticket-type products
+
+A "ticket type" in Orgo is a `Product` attached to the event. Create one per pricing tier (general admission, member, early-bird, etc).
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/products \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "AGM 2026 — General Admission",
+    "description": "Standard ticket for the Annual General Meeting.",
+    "isFee": false,
+    "isExternal": false,
+    "hasOneTimePayment": true,
+    "customMinPrice": 2500,
+    "hasCustomPriceValue": false,
+    "event": "/api/v1/events/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12"
+  }'
+```
+
+`customMinPrice` is in cents — `2500` is `$25.00`. Set `hasCustomPriceValue: true` if you want to allow attendees to pay more than the minimum (pay-what-you-want with a floor).
+
+Repeat for each ticket type. Each gets its own `uuid` and one `ProductPrice` record.
+
+---
+
+## Step 3 — Publish the event
+
+Publishing flips the event from `DRAFT` to `PUBLISHED` and makes the landing page reachable at `https://acme.orgo.space/events/{slug}`.
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/events_publish/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12 \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+After publishing, public callers can fetch the event via `GET /api/v1/get_public_event_anonymous/{uuid}` — no auth required.
+
+<Tip>
+Two publish endpoints exist: `/api/v1/events_publish/{uuid}` (the standard publish — flips status and notifies invitees if configured) and `/api/v1/event-go-publish/{uuid}` (used by the "Go" landing-page editor). Use the first one from server-to-server integrations.
+</Tip>
+
+---
+
+## Step 4 — Register an attendee
+
+Two paths: existing User or an external Contact.
+
+### Path A — existing User
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/event_attends \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "/api/v1/events/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
+    "user": "/api/v1/users/42",
+    "status": "NEW"
+  }'
+```
+
+Response includes the registration ID and a QR code (base64) that doubles as the check-in token.
+
+### Path B — external attendee (non-member)
+
+For non-Users, invite them by email — Orgo creates a `Contact` for them on confirmation:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/event_attend_invite_external \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "/api/v1/events/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
+    "firstName": "Olivia",
+    "lastName": "Brown",
+    "email": "olivia.brown@example.com"
+  }'
+```
+
+The recipient receives a magic link they can open without an Orgo account.
+
+---
+
+## Step 5 — Collect payment (Stripe checkout)
+
+For paid tickets, the registration triggers a Stripe checkout session. Free events skip this step.
+
+The checkout URL returned in the `EventAttend` response (or fetched on demand for the same attendee) leads to Stripe's hosted page. After payment, Stripe webhooks `/api/v1/stripe-webhook` and Orgo flips the `ProductPayment` to `SUCCESS`. You can also subscribe to the `product_payment.updated` webhook to know when payment clears — see [Handle webhooks](/api-reference/recipes/handle-webhooks).
+
+---
+
+## Check-in on the day
+
+At the venue, scan the attendee's QR code or look them up by name. Mark them attended:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/event_attends/1042/confirm \
+  -H "Api-Token: $ORGO_API_TOKEN" \
+  -H "Content-Type: application/merge-patch+json" \
+  -d '{}'
+```
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="My event published but the landing page returns 404">
+    Three causes: (1) `isPublic` is `false` — flip to `true`; (2) the tenant uses a custom domain and your slug collides with an existing route; (3) the event's `dateTimeEnd` is already in the past, in which case the public listing hides it.
+  </Accordion>
+
+  <Accordion title="The Stripe checkout returns 'no account configured'">
+    Stripe needs to be connected at the level the event's `unit` resolves to. If the event is on a local center, that local center needs a Stripe-connected account. Tenant-level Stripe doesn't cascade automatically.
+  </Accordion>
+
+  <Accordion title="How do I sell free tickets that still require registration?">
+    Set `hasEventTicketing: true`, `requiresRegistrationForm: true`, and create a Product with `customMinPrice: 0`. Stripe is bypassed for zero-amount tickets but the registration still requires confirmation.
+  </Accordion>
+
+  <Accordion title="Can attendees buy multiple tickets in one transaction?">
+    Yes — use `POST /api/v1/event_attends/{id}/guest-tickets` after the main registration to add up to N guests. Each guest gets their own QR code.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Send a newsletter campaign](/api-reference/recipes/send-a-newsletter-campaign) — announce the event to your audience
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — react to `event_attend.created` to sync registrations into your CRM
+- [Process payments](/api-reference/recipes/process-payments) — handle refunds and failed payments

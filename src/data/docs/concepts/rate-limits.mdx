@@ -1,0 +1,148 @@
+---
+title: 'Rate limits'
+description: 'Per-endpoint limits, how 429 responses look, and how to design integrations that never trip them'
+---
+
+Rate limiting on the Orgo API is **per endpoint** and **per token**, not a single global bucket. Most endpoints have no application-layer limit at all — they are only protected by platform-level infrastructure throttles. Limits exist on endpoints that are expensive (sending email, generating PDFs) or sensitive to abuse (login, OTP requests, impersonation).
+
+---
+
+## How limits are applied
+
+When an endpoint is rate-limited:
+
+- The limit is **20 requests per 60 seconds** by default. Some endpoints set their own.
+- The bucket is keyed by the **authenticated token** (Api-Token or JWT), or by **IP address** for unauthenticated endpoints.
+- Hitting the limit returns `429 Too Many Requests` with a `Retry-After` header telling you how many seconds to wait.
+
+Read-heavy endpoints (`GET /api/v1/users`, `GET /api/v1/events`, etc.) are *not* application-rate-limited under normal circumstances — you can paginate freely.
+
+---
+
+## Endpoints with explicit limits
+
+| Endpoint family | Why limited | Typical limit |
+|---|---|---|
+| `POST /api/v1/login-check` | Brute-force protection | 20 / 60s per IP |
+| `POST /api/v1/request-login-otp` | Email abuse prevention | 20 / 60s per email |
+| `POST /api/v1/verify-login-otp` | Brute-force protection | 20 / 60s per email |
+| `POST /api/v1/request-password-reset-otp` | Email abuse prevention | 20 / 60s per email |
+| `POST /api/v1/newsletters/{uuid}/send` | Outbound-email cost control | varies per plan |
+| `POST /api/v1/email_templates/send-test` | Outbound-email cost control | 20 / 60s |
+| `POST /api/v1/permission/impersonate/*` | Audit/abuse protection | 20 / 60s per admin |
+| `POST /api/v1/webhook_subscriptions/{id}/test` | Outbound-HTTP cost control | 20 / 60s |
+| `GET /api/v1/contacts-csv`, `GET /api/v1/users-csv` | DB load on large exports | 20 / 60s |
+| File-generation endpoints (PDF invoices, adhesion PDFs, contract PDFs) | CPU cost | 20 / 60s |
+
+Where a limit is not listed in an endpoint's reference page, assume it is not application-rate-limited beyond platform protections.
+
+---
+
+## The 429 response
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+Retry-After: 47
+```
+
+```json
+{
+  "title": "Too Many Requests",
+  "detail": "Rate limit exceeded. Try again in 47 seconds.",
+  "status": 429
+}
+```
+
+Always honor `Retry-After`. Retrying inside the window will *not* succeed and only delays your overall throughput.
+
+---
+
+## Designing for the limits
+
+<AccordionGroup>
+
+  <Accordion title="Bulk operations — batch instead of looping">
+    Many endpoints have explicit bulk variants: `POST /api/v1/contacts/bulk-delete`, `POST /api/v1/waitlist_entries/bulk-approve`, etc. Each bulk call counts as **one** request and is far cheaper than N individual calls.
+
+    Prefer bulk endpoints over `for entry in entries: api.delete(entry)` loops.
+  </Accordion>
+
+  <Accordion title="Pagination — use the maximum page size">
+    `itemsPerPage=100` is the cap. Setting it lower means more requests for the same data and a higher chance of tripping platform-level throttles. Use 100 unless you have a specific reason not to.
+  </Accordion>
+
+  <Accordion title="Polling — switch to webhooks">
+    If you find yourself polling `GET /api/v1/payments?status=PENDING` every few seconds, subscribe to the `product_payment.updated` webhook instead. Webhooks deliver in under a second and cost no API calls. See [Webhooks](/api-reference/concepts/webhooks).
+  </Accordion>
+
+  <Accordion title="OAuth and JWT — cache tokens">
+    Do not call `/api/v1/login-check` before every request. Cache the JWT for its full ~11-day lifetime and only re-login when a request returns `401`. The same applies to OAuth access tokens — cache and refresh on demand, never on every call.
+  </Accordion>
+
+  <Accordion title="Background sync — go off-peak">
+    For nightly data syncs, schedule them during your tenant's off-hours. The platform handles concurrent tenants well, but a single integration making a thousand requests at noon still adds latency on top of normal user traffic.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Retry pattern
+
+A safe pattern that handles both 429 and transient 5xx:
+
+```python
+import time
+import requests
+
+def call(method, url, **kw):
+    backoff = 1
+    for attempt in range(6):
+        r = requests.request(method, url, **kw)
+        if r.status_code == 429:
+            wait = int(r.headers.get("Retry-After", backoff))
+            time.sleep(wait)
+        elif r.status_code >= 500:
+            time.sleep(backoff)
+        else:
+            return r
+        backoff = min(backoff * 2, 30)
+    return r
+```
+
+The same pattern in JavaScript / TypeScript:
+
+```ts
+async function call(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  let backoff = 1000;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const r = await fetch(input, init);
+    if (r.status === 429) {
+      const retryAfter = Number(r.headers.get("Retry-After") ?? backoff / 1000);
+      await new Promise(res => setTimeout(res, retryAfter * 1000));
+    } else if (r.status >= 500) {
+      await new Promise(res => setTimeout(res, backoff));
+    } else {
+      return r;
+    }
+    backoff = Math.min(backoff * 2, 30000);
+  }
+  throw new Error("call failed after 6 attempts");
+}
+```
+
+---
+
+## Per-plan limits
+
+There is no per-plan rate limit at the application layer today. Higher-volume plans get more generous platform-level concurrency budgets (more API workers, larger DB connection pools), but the per-endpoint application limits above are the same regardless of plan.
+
+If you have a use case that needs limits raised on a specific endpoint — high-volume webhook sender, large nightly export, etc. — contact support and we can adjust on a per-tenant basis.
+
+---
+
+## Related
+
+- [Errors](/api-reference/concepts/errors) — the 429 envelope and full retry strategy
+- [Webhooks](/api-reference/concepts/webhooks) — the cure for polling

@@ -1,0 +1,58 @@
+{
+  "name": "orgo-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for the Orgo API (member management, events, payments, contracts, governance).",
+  "type": "module",
+  "bin": {
+    "orgo-mcp": "./dist/index.js",
+    "orgo-mcp-http": "./dist/http.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run build:data && tsc && npm run build:copy-data && npm run build:chmod",
+    "build:data": "node --import tsx scripts/build-data.ts",
+    "build:copy-data": "node -e \"const{cpSync,rmSync}=require('node:fs');rmSync('dist/data',{recursive:true,force:true});cpSync('src/data','dist/data',{recursive:true});console.log('[build] copied src/data -> dist/data');\"",
+    "build:chmod": "node -e \"const{chmodSync}=require('node:fs');['dist/index.js','dist/http.js'].forEach(f=>chmodSync(f,0o755));console.log('[build] chmod +x bins');\"",
+    "build:watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "dev": "node --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "orgo",
+    "api",
+    "claude"
+  ],
+  "author": "Orgo Development Team <dev@orgo.space>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orgo-space/orgo-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/orgo-space/orgo-mcp/issues"
+  },
+  "homepage": "https://github.com/orgo-space/orgo-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^4.21.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.3"
+  }
+}

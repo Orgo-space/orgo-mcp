@@ -1,0 +1,259 @@
+---
+title: 'Build a public event landing page'
+description: 'Render event details, accept registrations, and show capacity — all via public, no-auth endpoints'
+---
+
+This walkthrough builds a custom public event page (your own marketing site, an embedded widget on a partner site, a printable poster) that reads from Orgo without requiring visitors to log in. It uses only public endpoints — no Api-Token, no JWT.
+
+Who is this for: marketing teams that own a custom landing page outside Orgo's stock event-page template, partner organizations that want to embed Orgo events on their site, or event-aggregator integrations.
+
+---
+
+## What's public, what's not
+
+| Operation | Public? |
+|---|---|
+| Read event details | Yes — `GET /api/v1/get_public_event_anonymous/{uuid}` |
+| List events for a tenant | Yes — `GET /api/v1/public_events` |
+| Check ticket availability | Yes — `GET /api/v1/events/{uuid}/availability` |
+| Hold tickets (cart) | Yes — `POST /api/v1/events/{uuid}/ticket-holds` |
+| Save attendees + complete payment | Yes — `POST /api/v1/public/event/{uuid}/save-attendees` and `/complete` |
+| Send invites by email | No — requires HR_LOCAL |
+| Manually confirm attendance | No — requires admin |
+
+Anything visitor-facing is in the public set. Anything that mutates the event itself requires auth.
+
+---
+
+## Prerequisites
+
+The event must be:
+- `status: PUBLISHED`
+- `isPublic: true`
+
+Anonymous reads return `404` for draft or non-public events. This is intentional — the public surface only exposes what the admin has chosen to share.
+
+---
+
+## Step 1 — Fetch event details
+
+```bash
+curl https://acme.orgo.space/api/v1/get_public_event_anonymous/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12
+```
+
+Response:
+
+```json
+{
+  "id": 12,
+  "uuid": "01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
+  "name": "Annual General Meeting 2026",
+  "slug": "annual-general-meeting-2026",
+  "description": "Quarterly chapter meeting open to all members.",
+  "dateTimeBegin": "2026-03-15T18:00:00+00:00",
+  "dateTimeEnd": "2026-03-15T21:00:00+00:00",
+  "location": "Boston Public Library, 700 Boylston St, Boston, MA 02116",
+  "cover": "https://cdn.orgo.space/events/12/cover.jpg",
+  "attendeeCount": 87,
+  "maxCapacity": 200,
+  "isPublic": true,
+  "hasEventTicketing": true,
+  "products": [
+    {
+      "uuid": "01938d8e-c2f4-7c2a-b8e1-3f7a9b8c4f99",
+      "name": "General Admission",
+      "customMinPrice": 2500
+    }
+  ]
+}
+```
+
+`attendeeCount` and `maxCapacity` are the inputs for rendering a "87 of 200 seats taken" indicator. Everything else is straightforward — render as you like.
+
+---
+
+## Step 2 — Check live availability
+
+`attendeeCount` from Step 1 is correct at fetch time, but stale within seconds on busy events. For real-time availability:
+
+```bash
+curl https://acme.orgo.space/api/v1/events/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12/availability
+```
+
+```json
+{
+  "availableTickets": 113,
+  "totalCapacity": 200,
+  "soldOut": false
+}
+```
+
+Call this on render and whenever the page is brought back into focus. For sold-out events, show "join waitlist" instead of the registration form (see [WaitlistEntry](/api-reference/waitlistentry)).
+
+---
+
+## Step 3 — Hold tickets while the buyer fills the form
+
+For paid events, hold tickets the moment the buyer starts filling the form — otherwise two people could submit checkout at the same time and only one's payment succeeds.
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/events/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12/ticket-holds \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quantity": 2,
+    "productPrice": "/api/v1/product_prices/22"
+  }'
+```
+
+Response:
+
+```json
+{
+  "holdId": "th_a3f8b2c4d6e8f1a3",
+  "quantity": 2,
+  "expiresAt": "2026-03-15T18:15:00+00:00"
+}
+```
+
+Holds expire after 15 minutes. If the buyer abandons the form, the hold releases automatically and the seats are returned to the pool. You can release explicitly:
+
+```bash
+curl -X PATCH https://acme.orgo.space/api/v1/ticket-holds/th_a3f8b2c4d6e8f1a3/release \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+---
+
+## Step 4 — Save attendee details
+
+Once the buyer fills in the form (name, email, ticket-type selection), submit:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/public/event/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12/save-attendees \
+  -H "Content-Type: application/json" \
+  -d '{
+    "holdId": "th_a3f8b2c4d6e8f1a3",
+    "attendees": [
+      {
+        "firstName": "Olivia",
+        "lastName": "Brown",
+        "email": "olivia.brown@example.com",
+        "productPrice": "/api/v1/product_prices/22"
+      },
+      {
+        "firstName": "Daniel",
+        "lastName": "Kowalski",
+        "email": "daniel.kowalski@example.com",
+        "productPrice": "/api/v1/product_prices/22"
+      }
+    ]
+  }'
+```
+
+For free events, you can skip the hold step entirely and call `save-attendees` directly — the seat reservation happens here in one shot.
+
+---
+
+## Step 5 — Take payment (paid events only)
+
+The save-attendees response includes a Stripe checkout URL. Redirect the buyer:
+
+```json
+{
+  "attendeeIds": [1042, 1043],
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+For free events, save-attendees completes the registration immediately — no checkout step. Each attendee gets a QR code by email.
+
+For paid events, Stripe redirects back to your `success_url` configured on the checkout session (or Orgo's default attendee-confirmation page). At that point the `ProductPayment` is `SUCCESS` and you can finalize:
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/public/event/01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12/complete \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId": "cs_test_..."}'
+```
+
+The complete call cross-checks the Stripe session, confirms attendance, sends the confirmation email + QR code, and returns the attendee IDs.
+
+---
+
+## Step 6 — Show "thanks for registering" with the QR
+
+After completion, fetch the attendee record to render the QR code (or the email contains a deep link to a public view):
+
+```bash
+curl https://acme.orgo.space/api/v1/public/event-attend/{attendHash}/agenda
+```
+
+The hash is unique per attendee and is in the confirmation email link. Show this on a "your ticket" page they can save or screenshot.
+
+---
+
+## Showing capacity and time-zone correctly
+
+`dateTimeBegin` and `dateTimeEnd` are ISO 8601 timestamps in UTC. The event also includes `timezone` (an IANA name like `America/New_York`). Render the date in the event's timezone (it's an in-person event), not the visitor's:
+
+```javascript
+const formatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: event.timezone,
+  dateStyle: "full",
+  timeStyle: "short",
+  timeZoneName: "short",
+});
+formatter.format(new Date(event.dateTimeBegin));
+// "Sunday, March 15, 2026 at 6:00 PM EST"
+```
+
+---
+
+## Adding to-calendar buttons
+
+Build .ics manually from the public event data. Don't link to a hosted Orgo .ics — there's no public endpoint for it; visitors building their own client are expected to generate locally:
+
+```ics
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:{uuid}@orgo.space
+DTSTART:20260315T180000Z
+DTEND:20260315T210000Z
+SUMMARY:Annual General Meeting 2026
+LOCATION:Boston Public Library, 700 Boylston St, Boston, MA 02116
+DESCRIPTION:Quarterly chapter meeting...
+URL:https://acme.orgo.space/events/annual-general-meeting-2026
+END:VEVENT
+END:VCALENDAR
+```
+
+---
+
+## Common gotchas
+
+<AccordionGroup>
+  <Accordion title="My public page caches event data — sold-out events show as available">
+    Cache the event details (Step 1) for ~5 minutes. Never cache `availability` (Step 2) — call it fresh on every render. The capacity number can change second-to-second.
+  </Accordion>
+
+  <Accordion title="Buyers complete the form but never reach checkout">
+    Browser JS pop-up blockers can swallow the `window.location` redirect to Stripe. Use a server-side redirect (302) instead of client-side `window.location = checkoutUrl`. Or use a regular `<a href>` link styled as a button.
+  </Accordion>
+
+  <Accordion title="Attendees aren't appearing in admin even though save-attendees returned 200">
+    For paid events, attendance is `PENDING` until payment completes via `/complete`. The admin UI hides pending until they pay (or filters them under "abandoned carts"). Wait for the `event_attend.updated` webhook with `status: NEW` to know the registration is confirmed.
+  </Accordion>
+
+  <Accordion title="Can I let users edit their registration later?">
+    Each attendee gets a magic-link in their confirmation email. The link uses `X-Contact-Hash` auth (see [Authentication](/api-reference/concepts/authentication)) and gives access to the attendee's own record only. Build a public page that consumes those endpoints if you want a self-service "update my details" surface.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## What to do next
+
+- [Create and sell event tickets](/api-reference/recipes/create-and-sell-event-tickets) — the admin-side setup that produced this event
+- [Process payments](/api-reference/recipes/process-payments) — payment reconciliation after Stripe completes
+- [Handle webhooks](/api-reference/recipes/handle-webhooks) — react to new registrations server-side
