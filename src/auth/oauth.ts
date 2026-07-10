@@ -81,9 +81,13 @@ export class OAuthValidator {
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
-      // No registration_endpoint: Orgo does not support DCR. Clients must use a
-      // pre-registered client_id, configured manually in the connector.
+      // Public PKCE clients only — Orgo's token endpoint authenticates no client
+      // secret, so advertise only what it actually accepts.
+      token_endpoint_auth_methods_supported: ['none'],
+      // RFC 7591 Dynamic Client Registration: Orgo now supports it, so clients
+      // (Claude.ai, other MCP agents) can self-register instead of needing a
+      // manually-configured client_id.
+      registration_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/register`,
     };
   }
 
