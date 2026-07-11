@@ -12,7 +12,7 @@
  * document, hosted at /.well-known/oauth-authorization-server on the MCP host.
  *
  * Token validation:
- *   - Bearer tokens are validated by calling GET {orgoBase}/oauth/userinfo.
+ *   - Bearer tokens are validated by calling GET {orgoBase}/api/v1/oauth/userinfo.
  *     If userinfo returns 200, the token is live; if 401, it's invalid.
  *   - Results are cached in-memory by token hash with a short TTL so we don't
  *     hit userinfo on every JSON-RPC call.
@@ -77,8 +77,8 @@ export class OAuthValidator {
       // Human consent screen is a Vue route in the Orgo SPA, served at /authorize
       // (the /oauth/* paths stay on Lambda for the machine endpoints below).
       authorization_endpoint: `${this.opts.orgoAuthBaseUrl}/authorize`,
-      token_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/token`,
-      userinfo_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/userinfo`,
+      token_endpoint: `${this.opts.orgoAuthBaseUrl}/api/v1/oauth/token`,
+      userinfo_endpoint: `${this.opts.orgoAuthBaseUrl}/api/v1/oauth/userinfo`,
       scopes_supported: this.opts.scopes,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -89,7 +89,7 @@ export class OAuthValidator {
       // RFC 7591 Dynamic Client Registration: Orgo now supports it, so clients
       // (Claude.ai, other MCP agents) can self-register instead of needing a
       // manually-configured client_id.
-      registration_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/register`,
+      registration_endpoint: `${this.opts.orgoAuthBaseUrl}/api/v1/oauth/register`,
     };
   }
 
@@ -101,7 +101,7 @@ export class OAuthValidator {
 
     let res: Response;
     try {
-      res = await fetch(`${this.opts.orgoAuthBaseUrl}/oauth/userinfo`, {
+      res = await fetch(`${this.opts.orgoAuthBaseUrl}/api/v1/oauth/userinfo`, {
         headers: { Authorization: `Bearer ${bearer}`, Accept: 'application/json' },
         signal: AbortSignal.timeout(10_000),
       });
