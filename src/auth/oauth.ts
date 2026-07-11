@@ -74,7 +74,9 @@ export class OAuthValidator {
   authorizationServerMetadata(publicBaseUrl: string) {
     return {
       issuer: publicBaseUrl,
-      authorization_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/authorize`,
+      // Human consent screen is a Vue route in the Orgo SPA, served at /authorize
+      // (the /oauth/* paths stay on Lambda for the machine endpoints below).
+      authorization_endpoint: `${this.opts.orgoAuthBaseUrl}/authorize`,
       token_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/token`,
       userinfo_endpoint: `${this.opts.orgoAuthBaseUrl}/oauth/userinfo`,
       scopes_supported: this.opts.scopes,
