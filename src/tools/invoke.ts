@@ -1,5 +1,5 @@
 /**
- * call_endpoint — the workhorse. Invokes any one of the 458 documented Orgo endpoints.
+ * call_endpoint — the workhorse. Invokes any one of the documented Orgo endpoints.
  *
  * Design notes:
  *   - The tool validates the (method, path) is known before firing. This catches
@@ -24,7 +24,7 @@ export function registerInvokeTool(server: McpServer, index: OpenApiIndex, clien
     {
       title: 'Call an Orgo API endpoint',
       description:
-        'Invoke any of the 458 documented Orgo endpoints. Before calling, look up the endpoint with ' +
+        `Invoke any of the ${index.endpoints.length} documented Orgo operations. Before calling, look up the endpoint with ` +
         '`describe_endpoint` so you know which parameters and body fields are required. ' +
         'Path placeholders like `{id}` are filled from `pathParams`. ' +
         'Query parameters support arrays (serialized as field[]=a&field[]=b for OR-filters) and ' +

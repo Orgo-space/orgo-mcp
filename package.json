@@ -22,7 +22,9 @@
     "dev": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run clean && npm run build",
+    "sync:spec": "node --import tsx scripts/sync-openapi.ts",
+    "build:code": "tsc && npm run build:copy-data && npm run build:chmod"
   },
   "keywords": [
     "mcp",

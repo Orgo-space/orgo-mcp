@@ -63,6 +63,72 @@ export function registerPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
+    'migrate-website',
+    {
+      title: 'Move an existing website into Orgo',
+      description:
+        'Crawl a WordPress, Squarespace, Wix, WildApricot, Hivebrite or NationBuilder site, map it onto Orgo\'s section vocabulary, dry-run it, and apply it as drafts.',
+      argsSchema: {
+        sourceUrl: z.string().describe('Address of the site to move, e.g. https://www.example.org'),
+        platform: z
+          .string()
+          .optional()
+          .describe('What it is built on, if known: wordpress, squarespace, wix, wildapricot, hivebrite, nationbuilder.'),
+      },
+    },
+    ({ sourceUrl, platform }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text:
+              `Move the website at ${sourceUrl} into Orgo` +
+              (platform ? ` (it is built on ${platform})` : '') +
+              `.\n\n` +
+              `Start by calling the \`website_guide\` tool with includeSchema: true. It returns the workflow and the ` +
+              `block vocabulary from this tenant, and it names the per-platform shortcuts for getting the content out ` +
+              `of the source cleanly — do not start crawling before you have read it.\n\n` +
+              `Then follow it: show me the page list and ask which pages to migrate, write the SiteSpec to ` +
+              `./orgo-migration/sitespec.json, run the import in dryRun mode and show me what would land, and stop. ` +
+              `Do not apply without my go-ahead, and do not publish at all until I ask for it.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    'write-website-page',
+    {
+      title: 'Write or change a page on the Orgo website',
+      description: 'Compose one page or news article on the tenant\'s public site from the block vocabulary.',
+      argsSchema: {
+        brief: z.string().describe('What the page should say and who it is for.'),
+        slug: z.string().optional().describe('The page address, e.g. "about" or "join-us". Omit and I will propose one.'),
+      },
+    },
+    ({ brief, slug }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text:
+              `Write a page for our Orgo website${slug ? ` at /${slug}` : ''}.\n\nBrief: ${brief}\n\n` +
+              `Call the \`website_guide\` tool with includeSchema: true first — compose only from the section types it ` +
+              `returns, using each type's intent to choose. Read GET /api/v1/website-settings so the page matches the ` +
+              `site's design, and GET /api/v1/website-snapshot to see what the site already says, so this page does not ` +
+              `repeat or contradict it. Every image goes through POST /api/v1/website-media/import first — blocks store ` +
+              `filenames, never urls. Save with PUT /api/v1/website-page/{slug} and show me the result; ` +
+              `publishing is a separate call and my decision.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     'find-endpoint',
     {
       title: 'Find the right endpoint for a goal',

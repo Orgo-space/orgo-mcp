@@ -470,5 +470,21 @@
   {
     "name": "WorkflowExecution",
     "description": "Resource 'WorkflowExecution' operations."
+  },
+  {
+    "name": "WebsiteArticle",
+    "description": "One article on a tenant's public website: news, an update, a story.\n\nEvery organisation this builder is meant to hold publishes these. All four\nreference sites carry a news index and article pages, and until now the\nbuilder had no answer: an admin could make a page per article, which is a\npage list nobody can maintain past a dozen, and a \"latest news\" row that\nwould have to be rebuilt by hand every time.\n\nThis is deliberately not App\\Entity\\Post. That is the members' feed - written\nby anyone, moderated, reacted to, and scoped to what a member may see. An\narticle is editorial: written by an admin, addressed to the public, and part\nof the site rather than of the community. Sharing a table would mean every\nquery for one carried the other's rules.\n\nThe body is the same block list a page has, through the same sanitizer, so\neverything the catalogue can express is available in an article - and an\nagent that has learned the block vocabulary already knows how to write one."
+  },
+  {
+    "name": "WebsiteMenuItem",
+    "description": "One entry of a tenant's website header menu, header buttons or footer menu.\n\nSelf-referencing for submenus, but only one level deep: a child cannot\nitself be a parent. The depth rule is enforced in WebsiteMenuService, not\nhere, so the violation surfaces as a 422 on the request that caused it\nrather than as an exception during flush.\n\nThe header action buttons (HEADER_ACTIONS) are the same thing as a menu\nentry - a label pointing somewhere - drawn as a pill instead of a text link,\nso they reuse this table rather than living in a parallel structure."
+  },
+  {
+    "name": "WebsitePage",
+    "description": "One page of a tenant's public website.\n\nThe page body is a JSON list of blocks rather than a rows-in-a-table tree:\na page is always read and written whole, never a block at a time, so a\nchild table would buy ordering and integrity we already enforce in\nWebsiteBlockSanitizer while costing a join on every public page view.\n\nNothing here is trusted at render time - blocks pass through\nWebsiteBlockSanitizer on write, which is the only writer of this column."
+  },
+  {
+    "name": "Website",
+    "description": "The website builder: a tenant's public site - pages, news articles, both menus, redirects,\ndesign settings and the media on it - authored as documents rather than rows.\n\nStart with two calls, in this order, before composing anything:\n\n  GET /api/v1/website-guide    the workflow. What to produce, in what order, and the two\n                               places to stop and ask a person. Markdown, written for an agent.\n  GET /api/v1/website-schema   the vocabulary. Every section type with its intent and one\n                               valid example, every enum, and which system blocks this tenant\n                               may use. Generated from the sanitizer that validates the write,\n                               so it cannot drift from what a save accepts.\n\nTwo shapes of work. A whole site - a migration from another platform - goes through\n`/website-snapshot` (read) and `/website-import` (dry-run, then apply, in one transaction).\nA single change goes through `PUT /website-page/{slug}` or `PUT /website-article/{slug}`,\nboth upserts by slug, so re-running a script converges instead of duplicating.\n\nImages are never URLs in a block: `POST /website-media/import` fetches one and returns the\nfilename the block stores. Nothing here publishes - imported pages land as drafts and\n`/website-publish` is a separate, deliberate call. Every write is preceded by a snapshot and\n`/website-restore/{uuid}` puts the site back.\n\nRequires ADMIN_TENANT and the website module enabled for the tenant."
   }
 ]

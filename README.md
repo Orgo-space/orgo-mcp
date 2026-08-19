@@ -2,7 +2,7 @@
 
 Model Context Protocol server for the [Orgo API](https://orgo.space/docs/api-reference). Lets LLM agents — Claude Desktop, Claude.ai, Cursor, Gemini, OpenAI Responses, custom agents — manage Orgo organizations: members, events, payments, contracts, communications, governance, learning.
 
-Built on the enriched Orgo OpenAPI spec: **458 paths**, **743 operations**, **118 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package.
+Built on the enriched Orgo OpenAPI spec: **485 paths**, **784 operations**, **122 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package. That includes the **website builder** — an agent connected here can move an organisation's site in from WordPress or Squarespace and author pages on it.
 
 ---
 
@@ -70,6 +70,21 @@ The build step rebuilds `src/data/` from the Orgo docs repo. The default source 
 ```bash
 ORGO_DOCS_REPO=/path/to/your/api-docs/checkout npm run build
 ```
+
+### Against a local Orgo (development)
+
+```bash
+npm install && npm run build:code
+
+claude mcp add orgo-local \
+  --env ORGO_TENANT_HOST=localhost:8088 \
+  --env ORGO_PROTOCOL=http \
+  --env ORGO_API_TOKEN=... \
+  -- node "$(pwd)/dist/index.js"
+```
+
+`ORGO_PROTOCOL=http` is required — the default is https and a bare `localhost:8088` over TLS fails at
+the socket. Tenant comes from the authenticated user, so the `Host` header does not have to resolve.
 
 ### Auth options (env)
 
@@ -157,15 +172,15 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 ## Tools exposed
 
-13 tools across discovery, invocation, and auth helpers.
+13 tools across discovery, invocation, the website builder, and auth helpers.
 
 ### Discovery (use these first)
 
 | Tool | Purpose |
 |---|---|
-| `list_resources` | List all 118 resource families (User, Event, Contact, …) with descriptions. |
+| `list_resources` | List all 122 resource families (User, Event, Contact, Website, …) with descriptions. |
 | `describe_resource` | Tag description + every endpoint for one resource family. |
-| `list_endpoints` | Search the 743-operation catalog by tag / method / free-text. |
+| `list_endpoints` | Search the 784-operation catalog by tag / method / free-text. |
 | `describe_endpoint` | Full OpenAPI spec for one operation: parameters, body, responses, code samples. |
 | `describe_schema` | JSON schema for a model (e.g. `User-user_read`). |
 | `list_webhooks` | All 18 webhook events. |
@@ -175,7 +190,23 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 | Tool | Purpose |
 |---|---|
-| `call_endpoint` | Workhorse — invokes any of the 458 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
+| `call_endpoint` | Workhorse — invokes any of the 485 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
+
+### Website builder
+
+| Tool | Purpose |
+|---|---|
+| `website_guide` | The workflow for building or migrating a tenant's public site, and — with `includeSchema: true` — the whole section vocabulary. Fetched live from the tenant, so it is exactly what that tenant's sanitizer accepts. Read it before composing anything. |
+
+Everything else about the website is ordinary `call_endpoint` work against the 26 `Website` endpoints
+(`list_endpoints({ tag: "Website" })`). Two things worth knowing before you point an agent at it:
+
+- **Nothing reaches a visitor by itself.** An import sets page statuses — pages land published
+  unless the spec says otherwise — but never the site's live switch; `POST /api/v1/website-publish`
+  is a separate call, and the guide tells the agent to ask a person first. Every write is preceded by
+  an automatic snapshot, and `/website-restore/{uuid}` puts the site back.
+- **A scoped Api-Token cannot reach any of it.** The builder is out of scope for scoped tokens by
+  design. Use OAuth, a JWT, or a full-access Api-Token, in each case for a tenant admin.
 
 ### Auth helpers (interactive flows)
 
@@ -191,11 +222,11 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 ## Resources exposed
 
-21 resources, all under the `orgo://` URI scheme.
+23 resources, all under the `orgo://` URI scheme.
 
 ```
 orgo://docs/overview                            ← API overview (info.md)
-orgo://docs/tags                                ← Catalog of all 118 resource families
+orgo://docs/tags                                ← Catalog of all 122 resource families
 orgo://docs/webhooks                            ← Webhook event catalog
 orgo://docs/concepts/authentication             ← 5 auth methods explained
 orgo://docs/concepts/tenancy                    ← Host-header tenant resolution
@@ -215,16 +246,23 @@ orgo://docs/recipes/integrate-oauth-login
 orgo://docs/recipes/handle-webhooks
 orgo://docs/recipes/manage-local-centers-and-permissions
 orgo://docs/recipes/run-a-board-election
+orgo://website/guide                            ← Live: the website migration + authoring workflow
+orgo://website/schema                           ← Live: the section vocabulary this tenant accepts
 ```
+
+The two `orgo://website/*` resources are fetched from the tenant on read rather than bundled — both
+are generated from the running code, and a bundled copy would go stale silently.
 
 ---
 
 ## Prompts exposed
 
-4 reusable prompts surfaced in the slash-command menu:
+6 reusable prompts surfaced in the slash-command menu:
 
 - `onboard-member` — full adhesion (membership application) flow
 - `sell-event-tickets` — create ticketed event + Stripe checkout
+- `migrate-website` — move a site in from WordPress, Squarespace, Wix, WildApricot, Hivebrite or NationBuilder
+- `write-website-page` — compose one page or article on the tenant's public site
 - `find-endpoint` — given a goal in plain language, locate the right operation(s)
 - `sync-crm` — design a one-way or two-way sync with an external CRM
 
@@ -251,9 +289,31 @@ The discovery-then-invoke pattern keeps the model grounded in the real catalog: 
 
 ---
 
-## Refreshing the bundled docs (maintainers)
+## Keeping the catalog current (maintainers)
 
-When the Orgo backend changes and the docs are regenerated, rebuild the bundle and cut a new release:
+There are two refresh paths, and the difference matters.
+
+**The API changed.** A feature shipped in orgo-platform and the bundled catalog does not know about
+it — which means `call_endpoint` *refuses* it, because it validates every call against this catalog.
+Merge straight from an export, without waiting on the docs pipeline:
+
+```bash
+# from a checkout of orgo-platform, with the containers up
+docker exec orgo-php bin/console api:openapi:export --spec-version=3 > /tmp/orgo-openapi.json
+
+cd path/to/orgo-mcp
+npm run sync:spec -- --from /tmp/orgo-openapi.json --only '^/api/v1/website' --dry   # see what would land
+npm run sync:spec -- --from /tmp/orgo-openapi.json --only '^/api/v1/website'
+npm run build:code
+```
+
+It is additive: an operation already bundled is left alone (the bundled copy carries the curated
+description and code samples), tags are added but never overwritten, and only schemas the new
+operations actually reference are copied. Drop `--only` to merge everything, `--overwrite` to let the
+export win. `--from` also takes a URL.
+
+**The docs changed.** Tag descriptions, concepts, recipes and code samples live in the api-docs repo.
+Rebuild the whole bundle from it and cut a release:
 
 ```bash
 # 1. Regenerate the enriched spec in the api-docs repo
@@ -269,6 +329,10 @@ ORGO_DOCS_REPO=path/to/api-docs npm run build
 npm version patch && npm publish
 ```
 
+`npm run build` wipes and rebuilds `src/data/` from that repo, so a checkout that is behind
+orgo-platform will *remove* endpoints the bundle already has. When you are only changing code, use
+`npm run build:code` — same build without the data step.
+
 ---
 
 ## Project layout
@@ -282,6 +346,7 @@ orgo-mcp/
 ├── .env.example
 ├── scripts/
 │   ├── build-data.ts          # bundles docs + builds the slim endpoint index
+│   ├── sync-openapi.ts        # additively merges a live API export into the bundle
 │   └── smoke-stdio.mjs        # end-to-end stdio smoke test
 └── src/
     ├── index.ts               # stdio entry
@@ -297,6 +362,7 @@ orgo-mcp/
     │   ├── shared.ts
     │   ├── discovery.ts       # list_endpoints, describe_endpoint, list_resources, …
     │   ├── invoke.ts          # call_endpoint
+    │   ├── website.ts         # website_guide
     │   └── auth.ts            # whoami, login, request_otp, verify_otp, refresh_token
     ├── resources/
     │   └── docs.ts            # concepts + recipes + catalogs

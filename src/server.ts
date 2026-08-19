@@ -12,7 +12,9 @@ import type { OrgoConfig } from './config.js';
 import { registerDiscoveryTools } from './tools/discovery.js';
 import { registerInvokeTool } from './tools/invoke.js';
 import { registerAuthTools } from './tools/auth.js';
+import { registerWebsiteTools } from './tools/website.js';
 import { registerDocResources } from './resources/docs.js';
+import { registerWebsiteResources } from './resources/website.js';
 import { registerPrompts } from './prompts/index.js';
 
 export interface BuildOptions {
@@ -38,12 +40,21 @@ export function buildServer({ config, client }: BuildOptions): McpServer {
       },
       instructions:
         `You have access to the Orgo API — a member-management platform covering people, events, payments, ` +
-        `contracts, communications, governance, and learning across 458 endpoints and 118 resource families.\n\n` +
+        `contracts, communications, governance, learning, and the organisation's public website ` +
+        `across ${index.endpoints.length} operations and ${index.tags.length} resource families.\n\n` +
         `Workflow:\n` +
         `  1. If unsure where to start, read orgo://docs/overview or orgo://docs/tags.\n` +
         `  2. Use list_endpoints / list_resources to discover the right operation.\n` +
         `  3. Use describe_endpoint to learn parameters and request/response shape.\n` +
         `  4. Use call_endpoint to execute. PATCH bodies are merge-patch by default.\n\n` +
+        `The website builder is the exception to that order. A tenant's public site — its pages, news ` +
+        `articles, menus, redirects, design and media — is authored as documents, not rows, and has a ` +
+        `fixed vocabulary of sections you cannot infer from the endpoint list. For anything touching it, ` +
+        `including moving a site in from WordPress, Squarespace, Wix, WildApricot, Hivebrite or ` +
+        `NationBuilder, call the \`website_guide\` tool first. It returns the workflow and the vocabulary ` +
+        `from this tenant. Nothing there puts a site in front of visitors by itself: an import sets page ` +
+        `statuses and leaves the live switch alone, and publishing is a ` +
+        `separate call that is the person's decision.\n\n` +
         `Tenant context: ${config.tenantHost}. All calls hit this host.`,
     },
   );
@@ -51,7 +62,9 @@ export function buildServer({ config, client }: BuildOptions): McpServer {
   registerDiscoveryTools(server, index);
   registerInvokeTool(server, index, httpClient);
   registerAuthTools(server, httpClient);
+  registerWebsiteTools(server, httpClient);
   registerDocResources(server, index);
+  registerWebsiteResources(server, httpClient);
   registerPrompts(server);
 
   return server;

@@ -98,7 +98,7 @@ export function registerDocResources(server: McpServer, index: OpenApiIndex) {
     'orgo://docs/tags',
     {
       title: 'Orgo resource catalog',
-      description: 'All 118 resource families with descriptions and lifecycle notes.',
+      description: `All ${index.tags.length} resource families with descriptions and lifecycle notes.`,
       mimeType: 'text/markdown',
     },
     async (uri) => {
