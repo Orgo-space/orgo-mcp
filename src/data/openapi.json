@@ -198495,6 +198495,167 @@
           }
         ]
       }
+    },
+    "/api/v1/website-forms": {
+      "get": {
+        "operationId": "websiteForms",
+        "tags": [
+          "Website"
+        ],
+        "summary": "Find forms the site may embed",
+        "description": "The forms a `form` section may embed: this tenant's own, live enough to show a visitor and answerable by one.\n\nThe questions are not stored in the block. The section holds the form's `formUuid` and fetches the questions when the page renders, which is what keeps a published page correct after somebody adds a question in Orgo Forms — and why re-typing the questions as fields of another section is always wrong.\n\nQuery: `search`, matched against the form's name and its content title. Omit it to browse the twenty most recently updated.\n\nReturns `{\"forms\": [{\"uuid\", \"name\", \"title\", \"status\", \"fieldCount\"}]}`. Put `uuid` in the block's `formUuid`; `name` is what the builder labels the section with.\n\nOnly embeddable forms come back, on two conditions the save path enforces again with a 422: the form is PUBLISHED or CLOSED (a draft renders \"not available\" to every visitor), and it is answerable without an Orgo account — its submission mode is `anyone_with_email` or `anonymous`. A `users_only` form is members-only: on a public page it would render questions a visitor can fill in and cannot send, so it is neither listed here nor accepted on save. A form missing from this list is one of those two things, never a form that does not exist.\n\nRequires ADMIN_TENANT and the website module.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Match against the form name and content title; omit to list the most recently updated",
+            "required": false,
+            "deprecated": false,
+            "schema": [],
+            "style": "form",
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          }
+        }
+      }
+    },
+    "/api/v1/website_pages/{uuid}/duplicate": {
+      "post": {
+        "operationId": "website_page_duplicate",
+        "tags": [
+          "WebsitePage"
+        ],
+        "responses": {
+          "201": {
+            "description": "WebsitePage resource created",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsitePage.jsonld-website_page_read"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsitePage-website_page_read"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsitePage.multipart-website_page_read"
+                }
+              }
+            },
+            "links": {}
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "links": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "links": {}
+          },
+          "422": {
+            "description": "An error occurred",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintViolation"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintViolation"
+                }
+              }
+            },
+            "links": {}
+          }
+        },
+        "summary": "Duplicate a website page",
+        "description": "Creates a copy of the page - same sections, SEO fields and sharing image - at the first free \"-copy\" address. The copy is always a draft and is never the homepage, so duplicating cannot put anything on the internet; publishing it is a separate call. Requires ADMIN_TENANT.",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "WebsitePage identifier",
+            "required": true,
+            "deprecated": false,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple",
+            "explode": false
+          }
+        ],
+        "requestBody": {
+          "description": "The new WebsitePage resource",
+          "content": {
+            "application/ld+json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsitePage-website_page_write"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsitePage-website_page_write"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsitePage-website_page_write"
+              }
+            }
+          },
+          "required": true
+        }
+      }
     }
   },
   "components": {

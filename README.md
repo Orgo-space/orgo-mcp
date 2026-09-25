@@ -2,7 +2,7 @@
 
 Model Context Protocol server for the [Orgo API](https://orgo.space/docs/api-reference). Lets LLM agents — Claude Desktop, Claude.ai, Cursor, Gemini, OpenAI Responses, custom agents — manage Orgo organizations: members, events, payments, contracts, communications, governance, learning.
 
-Built on the enriched Orgo OpenAPI spec: **485 paths**, **784 operations**, **122 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package. That includes the **website builder** — an agent connected here can move an organisation's site in from WordPress or Squarespace and author pages on it.
+Built on the enriched Orgo OpenAPI spec: **488 paths**, **787 operations**, **122 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package. That includes the **website builder** — an agent connected here can move an organisation's site in from WordPress or Squarespace and author pages on it.
 
 ---
 
@@ -180,7 +180,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 |---|---|
 | `list_resources` | List all 122 resource families (User, Event, Contact, Website, …) with descriptions. |
 | `describe_resource` | Tag description + every endpoint for one resource family. |
-| `list_endpoints` | Search the 784-operation catalog by tag / method / free-text. |
+| `list_endpoints` | Search the 787-operation catalog by tag / method / free-text. |
 | `describe_endpoint` | Full OpenAPI spec for one operation: parameters, body, responses, code samples. |
 | `describe_schema` | JSON schema for a model (e.g. `User-user_read`). |
 | `list_webhooks` | All 18 webhook events. |
@@ -190,7 +190,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 | Tool | Purpose |
 |---|---|
-| `call_endpoint` | Workhorse — invokes any of the 485 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
+| `call_endpoint` | Workhorse — invokes any of the 488 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
 
 ### Website builder
 
@@ -198,8 +198,9 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 |---|---|
 | `website_guide` | The workflow for building or migrating a tenant's public site, and — with `includeSchema: true` — the whole section vocabulary. Fetched live from the tenant, so it is exactly what that tenant's sanitizer accepts. Read it before composing anything. |
 
-Everything else about the website is ordinary `call_endpoint` work against the 26 `Website` endpoints
-(`list_endpoints({ tag: "Website" })`). Two things worth knowing before you point an agent at it:
+Everything else about the website is ordinary `call_endpoint` work against the 44 website endpoints
+(`list_endpoints({ tag: "Website" })` for the builder's own operations; the page, article and
+menu CRUD sit under `WebsitePage`, `WebsiteArticle` and `WebsiteMenuItem`). Two things worth knowing before you point an agent at it:
 
 - **Nothing reaches a visitor by itself.** An import sets page statuses — pages land published
   unless the spec says otherwise — but never the site's live switch; `POST /api/v1/website-publish`

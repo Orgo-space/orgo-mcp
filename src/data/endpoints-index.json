@@ -7270,6 +7270,16 @@
     "deprecated": false
   },
   {
+    "operationId": "websiteForms",
+    "method": "GET",
+    "path": "/api/v1/website-forms",
+    "tag": "Website",
+    "summary": "Find forms the site may embed",
+    "description": "The forms a `form` section may embed: this tenant's own, live enough to show a visitor and answerable by one.\n\nThe questions are not stored in the block. The section holds the form's `formUuid` and fetches the questions when the page renders, which is what keeps a published page correct after somebody adds a question in Orgo Forms — and why re-typing the questions as fields of another section is always wrong.\n\nQuery: `search`, matched against the form's name and its content title. Omit it to browse the twenty most recently updated.\n\nReturns `{\"forms\": [{\"uuid\", \"name\", \"title\", \"status\", \"fie…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
     "operationId": "websiteGuide",
     "method": "GET",
     "path": "/api/v1/website-guide",
@@ -7616,6 +7626,16 @@
     "tag": "WebsitePage",
     "summary": "Update a website page",
     "description": "Updates a page of the current tenant's website. Re-runs slug normalisation and block sanitization on every write. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "website_page_duplicate",
+    "method": "POST",
+    "path": "/api/v1/website_pages/{uuid}/duplicate",
+    "tag": "WebsitePage",
+    "summary": "Duplicate a website page",
+    "description": "Creates a copy of the page - same sections, SEO fields and sharing image - at the first free \"-copy\" address. The copy is always a draft and is never the homepage, so duplicating cannot put anything on the internet; publishing it is a separate call. Requires ADMIN_TENANT.",
     "hasBody": true,
     "deprecated": false
   },

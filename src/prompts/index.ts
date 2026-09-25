@@ -67,7 +67,7 @@ export function registerPrompts(server: McpServer) {
     {
       title: 'Move an existing website into Orgo',
       description:
-        'Crawl a WordPress, Squarespace, Wix, WildApricot, Hivebrite or NationBuilder site, map it onto Orgo\'s section vocabulary, dry-run it, and apply it as drafts.',
+        'Crawl a WordPress, Squarespace, Wix, WildApricot, Hivebrite or NationBuilder site, map it onto Orgo\'s section vocabulary, dry-run it, and apply it without putting the site live.',
       argsSchema: {
         sourceUrl: z.string().describe('Address of the site to move, e.g. https://www.example.org'),
         platform: z
