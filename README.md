@@ -107,7 +107,7 @@ The HTTP server lets multiple users connect with their own Orgo identities via O
 
 ```bash
 ORGO_TENANT_HOST=acme.orgo.space \
-ORGO_PUBLIC_BASE_URL=https://mcp.acme.orgo.space \
+ORGO_PUBLIC_BASE_URL=https://acme.mcp.orgo.space \
 PORT=3333 \
 node dist/http.js
 ```
@@ -126,7 +126,7 @@ node dist/http.js
 
 ### Why the synthetic metadata?
 
-Orgo's OAuth server does not publish RFC 8414 (auth server metadata), RFC 9728 (protected resource metadata), or RFC 7591 (dynamic client registration). The MCP spec (rev 2025-06-18) expects discovery via those documents. To bridge that gap, the MCP server publishes them itself, pointing at Orgo's actual endpoints. Standard MCP clients (Claude.ai, etc.) discover everything they need without manual config beyond a `client_id`.
+Orgo's OAuth server does not publish RFC 8414 (auth server metadata) or RFC 9728 (protected resource metadata). The MCP spec (rev 2025-06-18) expects discovery via those documents. To bridge that gap, the MCP server publishes them itself, pointing at Orgo's actual endpoints, including Orgo's RFC 7591 dynamic client registration endpoint (`/api/v1/oauth/register`). Standard MCP clients (Claude.ai, etc.) discover everything they need with no manual configuration: no client_id, no secret.
 
 ### OAuth flow at runtime
 
@@ -139,11 +139,11 @@ Orgo's OAuth server does not publish RFC 8414 (auth server metadata), RFC 9728 (
 
 ### Connector setup (Claude.ai)
 
-In Claude.ai → Settings → Integrations → Add custom MCP server:
-- **URL**: `https://mcp.acme.orgo.space/mcp`
-- **Auth type**: OAuth
-- **Client ID**: register an OAuth client in Orgo's admin UI, paste the client_id here
-- (PKCE is auto-negotiated; client secret optional for SPAs)
+In Claude.ai → Settings → Connectors → Add custom connector:
+- **URL**: `https://acme.mcp.orgo.space/mcp` (the app shows each organisation its own address under Website → Build by asking). Tenants on a custom domain use the apex, `https://mcp.orgo.space/mcp`.
+- No client ID or secret: Claude.ai registers itself through dynamic client registration, then opens Orgo's consent screen. PKCE is negotiated automatically.
+
+Every tenant subdomain is served by one wildcard certificate (see `Caddyfile`); there is no per-tenant TLS step.
 
 Once connected, Claude.ai shows the full Orgo tool tray scoped to the connected user's permissions.
 
@@ -156,9 +156,11 @@ Any MCP client that supports remote/HTTP transport works the same way. Some agen
 The simplest multi-tenant pattern is **one deployment per tenant subdomain**, mirroring how the Orgo API itself is routed:
 
 ```
-mcp.acme.orgo.space     → ORGO_TENANT_HOST=acme.orgo.space
-mcp.contoso.orgo.space  → ORGO_TENANT_HOST=contoso.orgo.space
+acme.mcp.orgo.space     → ORGO_TENANT_HOST=acme.orgo.space
+contoso.mcp.orgo.space  → ORGO_TENANT_HOST=contoso.orgo.space
 ```
+
+The hostname scheme is `{tenant}.mcp.orgo.space`, not `mcp.{tenant}.orgo.space`: a single `*.mcp.orgo.space` DNS record and one wildcard certificate cover every tenant. The default multi-tenant routing pattern in `src/lib/tenant.ts` derives `acme.orgo.space` from `acme.mcp.orgo.space` automatically.
 
 This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-tenant routing logic in the MCP layer.
 

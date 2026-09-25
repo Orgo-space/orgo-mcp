@@ -6,13 +6,13 @@ Step-by-step deploy of the hosted HTTP server from a clean state. Pairs with the
 
 ```
 internet
-   │  https://mcp.{tenant}.orgo.space
+   │  https://{tenant}.mcp.orgo.space
    ▼
 ┌──────────────────────────────────┐
 │  EC2 t3.small (eu-central-1)     │
 │  ┌──────────────────────────┐    │
 │  │ Caddy (80/443)            │    │
-│  │  ├─ ACME (Let's Encrypt)  │    │
+│  │  ├─ ACME wildcard (DNS-01) │    │
 │  │  └─ reverse_proxy ─┐      │    │
 │  └────────────────────┼──────┘    │
 │  ┌────────────────────▼──────┐    │
@@ -60,18 +60,15 @@ git push origin v0.1.0
 
 After ~3 minutes you should see `ghcr.io/orgo-space/orgo-mcp:0.1.0` in the org's Packages tab. **Make it public** (Package settings → Change visibility → Public) so the EC2 box can pull it without auth — or supply ECR credentials in the user-data instead.
 
-### 2. Register an OAuth client in Orgo admin
+### 2. OAuth clients register themselves
 
-The hosted MCP server delegates auth to Orgo's existing OAuth server. Each consuming agent (Claude.ai, Gemini, OpenAI, etc.) needs a `client_id` registered manually because Orgo doesn't expose Dynamic Client Registration.
+Orgo exposes RFC 7591 dynamic client registration at `POST /api/v1/oauth/register` (rate-limited per IP), and the MCP server advertises it in its authorization-server metadata. Claude.ai and other MCP clients register on first connect; nothing to create by hand.
 
-In the Orgo admin UI:
+### 2b. TLS credentials for the wildcard certificate
 
-1. Go to **Settings → Developers → OAuth Clients → New client**
-2. Name: `Claude.ai MCP` (one per agent)
-3. Redirect URIs: get from each agent's MCP-connector docs (Claude.ai publishes theirs on their integrations page)
-4. Scopes: `profile email groups roles`
-5. PKCE: required
-6. Save the `client_id` — it's what users will paste into the connector setup
+Tenant subdomains are served under one `*.mcp.orgo.space` certificate. Let's Encrypt issues wildcards only via DNS-01, so Caddy needs a Cloudflare API token with Zone:Read + DNS:Edit on `orgo.space`. The box reads it from SSM parameter `/ORGO_PROD/CLOUDFLARE_API_TOKEN` (the instance profile already allows it) into `/opt/orgo-mcp/caddy.env` (mode 600) at first boot. To rotate the token: update the SSM parameter, then re-run the fetch line from `user-data.sh.tpl` and `docker compose up -d --force-recreate caddy`.
+
+The caddy image must include the `caddy-dns/cloudflare` plugin; the stack pins `ghcr.io/caddybuilds/caddy-cloudflare`.
 
 ### 3. Apply the Terraform module
 
@@ -118,37 +115,37 @@ sudo docker logs orgo-mcp-mcp-1 --tail 20 # expect "orgo_mcp_http_started" JSON 
 
 These are the same 6 checks documented in the saved memory plan. All must pass.
 
-Replace `<your-test-tenant>` with the tenant subdomain you want to validate (e.g. `app` for `mcp.app.orgo.space`).
+Replace `<your-test-tenant>` with the tenant subdomain you want to validate (e.g. `app` for `app.mcp.orgo.space`). Any tenant works: there is no per-tenant TLS or Caddy step.
 
 ```bash
 TENANT=<your-test-tenant>
 
 # 1. OAuth protected resource metadata renders, references the right authorization server
-curl -fsS "https://mcp.$TENANT.orgo.space/.well-known/oauth-protected-resource" | jq
+curl -fsS "https://$TENANT.mcp.orgo.space/.well-known/oauth-protected-resource" | jq
 
 # 2. OAuth authorization server metadata renders, points at app.orgo.space/oauth
-curl -fsS "https://mcp.$TENANT.orgo.space/.well-known/oauth-authorization-server" | jq
+curl -fsS "https://$TENANT.mcp.orgo.space/.well-known/oauth-authorization-server" | jq
 
 # 3. Unauthed POST /mcp returns 401 with the resource_metadata WWW-Authenticate hint
-curl -i -X POST "https://mcp.$TENANT.orgo.space/mcp" \
+curl -i -X POST "https://$TENANT.mcp.orgo.space/mcp" \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | grep -E 'HTTP/|WWW-Authenticate'
 # expect: HTTP/2 401 ... WWW-Authenticate: Bearer ... resource_metadata="..."
 
 # 4. SSRF guard: a Host that's not on the allowlist returns 400
-curl -i "https://mcp.evil-domain.com/.well-known/oauth-protected-resource" -H "host: mcp.evil-domain.com"
+curl -i "https://evil.mcp.orgo.space/.well-known/oauth-protected-resource" -H "host: evil.mcp.example.com"
 # expect: 400 forbidden_tenant
-# (note: this only works if you've added mcp.evil-domain.com to your /etc/hosts pointing at the EIP)
+# (the TLS handshake uses a real tenant host; the forged Host header is what the app rejects)
 
 # 5. Authed initialize → tools/list returns 13 tools
 TOKEN=<real OAuth bearer for tenant $TENANT, obtained out-of-band>
-SESSION=$(curl -fsSi -X POST "https://mcp.$TENANT.orgo.space/mcp" \
+SESSION=$(curl -fsSi -X POST "https://$TENANT.mcp.orgo.space/mcp" \
   -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"runbook","version":"0"}}}' \
   | grep -i '^mcp-session-id' | cut -d' ' -f2 | tr -d '\r')
 echo "session: $SESSION"
-curl -fsS -X POST "https://mcp.$TENANT.orgo.space/mcp" \
+curl -fsS -X POST "https://$TENANT.mcp.orgo.space/mcp" \
   -H "authorization: Bearer $TOKEN" \
   -H "mcp-session-id: $SESSION" \
   -H 'content-type: application/json' \
@@ -157,7 +154,7 @@ curl -fsS -X POST "https://mcp.$TENANT.orgo.space/mcp" \
 
 # 6. Hijack test: same session id, different user's bearer → 403 session_owner_mismatch
 TOKEN_B=<bearer of a DIFFERENT user in the same tenant>
-curl -i -X POST "https://mcp.$TENANT.orgo.space/mcp" \
+curl -i -X POST "https://$TENANT.mcp.orgo.space/mcp" \
   -H "authorization: Bearer $TOKEN_B" \
   -H "mcp-session-id: $SESSION" \
   -H 'content-type: application/json' \
@@ -170,7 +167,7 @@ Optional load test (skip for staging-only):
 ```bash
 # 7. Sanity load — 20 concurrent connections for 30s, p95 < 500ms
 wrk -t4 -c20 -d30s -H "authorization: Bearer $TOKEN" \
-  -s tools_list.lua https://mcp.$TENANT.orgo.space/mcp
+  -s tools_list.lua https://$TENANT.mcp.orgo.space/mcp
 ```
 
 ---

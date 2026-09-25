@@ -35,8 +35,12 @@ services:
       start_period: 5s
 
   # Uncomment to terminate TLS locally with Caddy (requires DNS or /etc/hosts).
+  # The wildcard block in Caddyfile needs the cloudflare DNS plugin, hence the
+  # caddybuilds image rather than stock caddy:2, and CLOUDFLARE_API_TOKEN in env.
   # caddy:
-  #   image: caddy:2-alpine
+  #   image: ghcr.io/caddybuilds/caddy-cloudflare:2.11.4
+  #   environment:
+  #     CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
   #   restart: unless-stopped
   #   ports:
   #     - "443:443"
