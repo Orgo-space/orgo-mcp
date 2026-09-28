@@ -198481,7 +198481,7 @@
           }
         },
         "summary": "Find documents the site may offer for download",
-        "description": "The files a `files` section may list: documents this tenant has already shared publicly from Drive.\n\nNothing is uploaded to publish a document. Drive already holds the organisation's files together with their permissions, their sharing and their revocation, so the website links at the file where it lives - a second upload path here would be a second copy of every statute and annual report, out of date within the week.\n\nQuery: `search`, matched against the file's title. Omit it to browse; most tenants have few enough public files to read the list.\n\nReturns `{\"files\": [{\"slug\", \"title\", \"fileType\", \"size\", \"url\", \"thumbnailUrl\"}]}`. Put `slug` in the block, and copy `title`, `fileType` and `size` alongside it - a published page is a static file on a CDN and cannot ask Drive what a slug points at. Never store `url`: the section rebuilds it from the slug, which is what stops a block naming an origin nobody checked. `thumbnailUrl` is for a picker's own preview; the section lists files as files and draws no thumbnails.\n\nOnly files with a public share come back, and only ones this admin can already see in Drive. A document nobody has shared is not listed at all - share it in Drive first. Revoking that share later takes the download down and leaves the row pointing at a 404, which is what revoking a share is asking for.\n\nRequires ADMIN_TENANT and the website module.",
+        "description": "The files a `files` section may list: documents this tenant has already shared publicly from Drive.\n\nA Drive row links at the file where it lives, with Drive's permissions and revocation. For a document that belongs to the website alone - above all the downloads of a site being migrated in - use /api/v1/website-documents instead and store `file` rather than `slug`.\n\nQuery: `search`, matched against the file's title. Omit it to browse; most tenants have few enough public files to read the list.\n\nReturns `{\"files\": [{\"slug\", \"title\", \"fileType\", \"size\", \"url\", \"thumbnailUrl\"}]}`. Put `slug` in the block, and copy `title`, `fileType` and `size` alongside it - a published page is a static file on a CDN and cannot ask Drive what a slug points at. Never store `url`: the section rebuilds it from the slug, which is what stops a block naming an origin nobody checked. `thumbnailUrl` is for a picker's own preview; the section lists files as files and draws no thumbnails.\n\nOnly files with a public share come back, and only ones this admin can already see in Drive. A document nobody has shared is not listed at all - share it in Drive first. Revoking that share later takes the download down and leaves the row pointing at a 404, which is what revoking a share is asking for.\n\nRequires ADMIN_TENANT and the website module.",
         "parameters": [
           {
             "name": "search",
@@ -198655,6 +198655,175 @@
           },
           "required": true
         }
+      }
+    },
+    "/api/v1/website-documents": {
+      "get": {
+        "operationId": "websiteDocuments",
+        "tags": [
+          "Website"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          }
+        },
+        "summary": "List the documents the website hosts",
+        "description": "Documents stored by the website itself for a `files` section - the other source beside Drive shares. Newest first, at most 20.\n\nQuery: `search`, matched against the file name.\n\nReturns `{\"files\": [{\"file\", \"title\", \"fileType\", \"size\", \"url\"}]}`. Put `file` in the row, never `url` (the section rebuilds the address), and copy `title`, `fileType` and `size` alongside it.\n\nRequires ADMIN_TENANT and the website module.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Match against the file name; omit to list the newest",
+            "required": false,
+            "deprecated": false,
+            "schema": [],
+            "style": "form",
+            "explode": true
+          }
+        ]
+      }
+    },
+    "/api/v1/website-documents/import": {
+      "post": {
+        "operationId": "websiteDocumentsImport",
+        "tags": [
+          "Website"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          },
+          "422": {
+            "description": "The payload was refused; the message names what is wrong"
+          },
+          "429": {
+            "description": "Rate limited for this tenant"
+          }
+        },
+        "summary": "Import a document into the site by url",
+        "description": "Fetches a document - the statute, annual report or form a migrated site offered for download - stores it publicly on the website's CDN and returns the row a `files` section stores.\n\nBody: {\"url\": \"https://...\"}.\n\nSame guards as an image import: http and https only, no private or internal address anywhere in the redirect chain. At most 25 MB. The bytes are checked, not the name or the Content-Type: PDF, Word, Excel, PowerPoint (old and new), OpenDocument, RTF, EPUB, plain text and CSV are accepted; HTML, SVG, archives, images and executables are refused.\n\nReturns `{\"file\", \"title\", \"fileType\", \"size\", \"url\", \"reused\"}`. Importing the same url twice returns the stored file without fetching again.\n\nA hosted document is public until deleted; it has no share to revoke. Requires ADMIN_TENANT and the website module. Rate limited per tenant, on the same budget as image imports.",
+        "parameters": [],
+        "requestBody": {
+          "description": "JSON body; see the description",
+          "required": false
+        }
+      }
+    },
+    "/api/v1/website-documents/upload": {
+      "post": {
+        "operationId": "websiteDocumentsUpload",
+        "tags": [
+          "Website"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          },
+          "422": {
+            "description": "The payload was refused; the message names what is wrong"
+          },
+          "429": {
+            "description": "Rate limited for this tenant"
+          }
+        },
+        "summary": "Publish an uploaded document",
+        "description": "Step two: checks the staged file the way an import does, publishes it and removes the staged copy.\n\nBody: {\"uploadKey\": \"<from upload-url>\", \"fileName\": \"Annual report 2025.pdf\"}. The name becomes the readable part of the stored name and the title; it never decides the format.\n\nReturns the same row as the import. Uploading identical bytes twice returns the first file.\n\nRequires ADMIN_TENANT and the website module.",
+        "parameters": [],
+        "requestBody": {
+          "description": "JSON body; see the description",
+          "required": false
+        }
+      }
+    },
+    "/api/v1/website-documents/upload-url": {
+      "post": {
+        "operationId": "websiteDocumentsUploadUrl",
+        "tags": [
+          "Website"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          },
+          "422": {
+            "description": "The payload was refused; the message names what is wrong"
+          },
+          "429": {
+            "description": "Rate limited for this tenant"
+          }
+        },
+        "summary": "Start a document upload",
+        "description": "Step one of uploading bytes you hold. The API cannot carry a 25 MB body, so the file goes straight to storage: POST it as multipart/form-data to `url` with every entry of `fields`, then a `Content-Type` field, then the file as `file`.\n\nReturns `{\"uploadKey\", \"url\", \"fields\", \"maxBytes\"}`. The key is private and valid for 15 minutes. Then call POST /api/v1/website-documents/upload.\n\nRequires ADMIN_TENANT and the website module. Rate limited per tenant.",
+        "parameters": [],
+        "requestBody": {
+          "description": "JSON body; see the description",
+          "required": false
+        }
+      }
+    },
+    "/api/v1/website-documents/{file}": {
+      "delete": {
+        "operationId": "websiteDocumentsDelete",
+        "tags": [
+          "Website"
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "403": {
+            "description": "Not an admin of this tenant, or the website module is off"
+          },
+          "404": {
+            "description": "No such item in this tenant"
+          }
+        },
+        "summary": "Delete a document the website hosts",
+        "description": "Takes a hosted document off the CDN. `file` is the name a `files` row stores.\n\nRefused with 409 while any page still links it - the response names the pages. Remove the rows first, or pass `force=true` to delete anyway; the answer then lists the pages left pointing at a missing file in `stillLinkedFrom`.\n\nReturns `{\"deleted\", \"stillLinkedFrom\"}`. 404 for a name that is not one of this tenant's documents. Drive shares are not affected - revoke those in Drive.\n\nRequires ADMIN_TENANT and the website module.",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "description": "The stored document name, e.g. wd-3f9a01c2-7be41d09a5c3-statute.pdf",
+            "required": true,
+            "deprecated": false,
+            "schema": [],
+            "style": "simple",
+            "explode": false
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "Delete even while pages still link it",
+            "required": false,
+            "deprecated": false,
+            "schema": [],
+            "style": "form",
+            "explode": true
+          }
+        ]
       }
     }
   },

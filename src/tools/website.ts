@@ -30,7 +30,7 @@ export function registerWebsiteTools(server: McpServer, client: OrgoClient) {
       title: 'How to build or migrate a website in Orgo',
       description:
         'Read this BEFORE composing any website page, article, menu or migration. Orgo tenants have a website builder: ' +
-        'pages and news articles built from a fixed vocabulary of sections, with menus, redirects, design settings and media. ' +
+        'pages and news articles built from a fixed vocabulary of sections, with menus, redirects, design settings, media and downloadable documents (PDF, Office, CSV) the site hosts or links from Drive. ' +
         'Returns the migration and authoring workflow (what to produce, in what order, and where to stop and ask the person) and, ' +
         'with includeSchema, the full block vocabulary — every section type with its intent, one valid example, and every allowed value. ' +
         'Both come from the running tenant, generated from the code that validates the writes, so they cannot be out of date. ' +

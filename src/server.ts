@@ -49,7 +49,7 @@ export function buildServer({ config, client }: BuildOptions): McpServer {
         `  3. Use describe_endpoint to learn parameters and request/response shape.\n` +
         `  4. Use call_endpoint to execute. PATCH bodies are merge-patch by default.\n\n` +
         `The website builder is the exception to that order. A tenant's public site — its pages, news ` +
-        `articles, menus, redirects, design and media — is authored as documents, not rows, and has a ` +
+        `articles, menus, redirects, design, media and downloadable documents — is authored as documents, not rows, and has a ` +
         `fixed vocabulary of sections you cannot infer from the endpoint list. For anything touching it, ` +
         `including moving a site in from WordPress, Squarespace, Wix, WildApricot, Hivebrite or ` +
         `NationBuilder, call the \`website_guide\` tool first. It returns the workflow and the vocabulary ` +

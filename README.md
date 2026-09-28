@@ -200,7 +200,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 |---|---|
 | `website_guide` | The workflow for building or migrating a tenant's public site, and — with `includeSchema: true` — the whole section vocabulary. Fetched live from the tenant, so it is exactly what that tenant's sanitizer accepts. Read it before composing anything. |
 
-Everything else about the website is ordinary `call_endpoint` work against the 44 website endpoints
+Everything else about the website is ordinary `call_endpoint` work against the 49 website endpoints
 (`list_endpoints({ tag: "Website" })` for the builder's own operations; the page, article and
 menu CRUD sit under `WebsitePage`, `WebsiteArticle` and `WebsiteMenuItem`). Two things worth knowing before you point an agent at it:
 
@@ -208,6 +208,12 @@ menu CRUD sit under `WebsitePage`, `WebsiteArticle` and `WebsiteMenuItem`). Two 
   unless the spec says otherwise — but never the site's live switch; `POST /api/v1/website-publish`
   is a separate call, and the guide tells the agent to ask a person first. Every write is preceded by
   an automatic snapshot, and `/website-restore/{uuid}` puts the site back.
+- **Pictures and documents come in by url.** `POST /api/v1/website-media/import` for images,
+  `POST /api/v1/website-documents/import` for PDFs, Office files and CSVs a migrated site offered
+  for download; blocks store the returned names, never urls. A document can also be uploaded
+  (`/website-documents/upload-url`, then `/website-documents/upload`) or linked from a public Drive
+  share. A hosted document is public until `DELETE /api/v1/website-documents/{file}` (refused
+  with 409 while a page still links it, unless `force=true`).
 - **A scoped Api-Token cannot reach any of it.** The builder is out of scope for scoped tokens by
   design. Use OAuth, a JWT, or a full-access Api-Token, in each case for a tenant admin.
 
