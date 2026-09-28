@@ -17,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     image: orgo-mcp:local
     restart: unless-stopped
     ports:

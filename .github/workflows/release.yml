@@ -81,6 +81,9 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          # Explicit: without a target, Docker builds the last stage, which is
+          # the support server.
+          target: runtime
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
