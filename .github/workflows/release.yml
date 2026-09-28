@@ -1,8 +1,11 @@
-# Release: on tag push (vX.Y.Z), build both Docker images and publish to GHCR:
-#   - orgo-mcp          the hosted API MCP (dist/http.js)
-#   - orgo-support-mcp  the support MCP Fin connects to (dist/support.js). It
-#                       carries no facts; the index is mounted at runtime, which
-#                       is what makes publishing it safe.
+# Release: on tag push (vX.Y.Z), build both Docker images:
+#   - orgo-mcp          the hosted API MCP (dist/http.js), public on GHCR
+#   - orgo-support-mcp  the support MCP Fin connects to (dist/support.js),
+#                       private in Orgo's ECR. It carries no facts; the index is
+#                       mounted at runtime. The job assumes an AWS role through
+#                       GitHub OIDC (no stored secret); the role ARN and region
+#                       are the SUPPORT_ECR_* Actions variables, and the job is
+#                       skipped where they are unset (forks).
 #
 # Security discipline applied:
 #   - Workflow triggers only on tag push (not pull_request_target).
@@ -114,8 +117,12 @@ jobs:
           exit 1
 
   publish-support:
+    if: ${{ vars.SUPPORT_ECR_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # OIDC token for the AWS role; trusted for v* tags only
     steps:
       - name: Checkout source
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -123,22 +130,26 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
 
-      - name: Log in to GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      - name: Assume the release role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ vars.SUPPORT_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.SUPPORT_ECR_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        with:
+          mask-password: "true"
 
       - name: Compute image tags
         id: meta
         uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/orgo-support-mcp
+          images: ${{ steps.ecr.outputs.registry }}/orgo-support-mcp
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=ref,event=tag
 
       # The isolation guard runs inside this build (Dockerfile support-builder),
       # so an image that can reach the Orgo API cannot be produced at all.
@@ -156,8 +167,10 @@ jobs:
             SOURCE_SHA=${{ github.sha }}
           cache-from: type=gha,scope=support
           cache-to: type=gha,mode=max,scope=support
-          provenance: true
-          sbom: true
+          # Off: in ECR the attestation manifests land as untagged images that
+          # crowd the lifecycle policy's count.
+          provenance: false
+          sbom: false
 
       # Refuses to start without a bearer, so the smoke passes a throwaway one.
       # No facts are mounted: an empty index must still come up healthy.
