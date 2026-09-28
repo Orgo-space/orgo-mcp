@@ -14494,182 +14494,80 @@
               "application/ld+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Company.jsonld-company_read"
-                },
-                "example": {
-                  "@context": "string",
-                  "@id": "string",
-                  "@type": "string",
-                  "id": 42,
-                  "uuid": "01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
-                  "tenant": "/api/v1/tenants/1",
-                  "name": "Boston Chapter",
-                  "status": "ACTIVE",
-                  "description": "Quarterly chapter meeting open to all members.",
-                  "contactEmail": "james.patterson@example.com",
-                  "contactPhone": "+1 415 555 0142",
-                  "contactFullName": "Boston Chapter",
-                  "address": "123 Beacon Street",
-                  "vatNumber": "US123456789",
-                  "legalName": "Boston Chapter",
-                  "registrationNumber": "string",
-                  "contactPhoneCountry": "+1 415 555 0142",
-                  "logo": "https://cdn.orgo.space/tenants/acme/logo.png",
-                  "website": "https://civic-collective.example.com",
-                  "town": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "country": {
-                      "@context": "string",
-                      "@id": "string",
-                      "@type": "string",
-                      "id": 42,
-                      "name": "Boston Chapter",
-                      "code": "BOS-2026-Q1"
-                    }
-                  },
-                  "country": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "code": "BOS-2026-Q1"
-                  },
-                  "validFeeDate": "2026-01-15T10:30:00+00:00",
-                  "feeTenantProductPrice": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "companySlots": 42
-                  },
-                  "maxSlots": 42,
-                  "dateCreated": "2026-01-15T10:30:00+00:00",
-                  "dateUpdated": "2026-01-15T10:30:00+00:00",
-                  "isFeeActive": true,
-                  "usedSlots": 42,
-                  "pendingInvitationsCount": 12,
-                  "availableSlots": 42
                 }
               },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Company-company_read"
-                },
-                "example": {
-                  "id": 42,
-                  "uuid": "01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
-                  "tenant": "/api/v1/tenants/1",
-                  "name": "Boston Chapter",
-                  "status": "ACTIVE",
-                  "description": "Quarterly chapter meeting open to all members.",
-                  "contactEmail": "james.patterson@example.com",
-                  "contactPhone": "+1 415 555 0142",
-                  "contactFullName": "Boston Chapter",
-                  "address": "123 Beacon Street",
-                  "vatNumber": "US123456789",
-                  "legalName": "Boston Chapter",
-                  "registrationNumber": "string",
-                  "contactPhoneCountry": "+1 415 555 0142",
-                  "logo": "https://cdn.orgo.space/tenants/acme/logo.png",
-                  "website": "https://civic-collective.example.com",
-                  "town": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "country": {
-                      "id": 42,
-                      "name": "Boston Chapter",
-                      "code": "BOS-2026-Q1"
-                    }
-                  },
-                  "country": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "code": "BOS-2026-Q1"
-                  },
-                  "validFeeDate": "2026-01-15T10:30:00+00:00",
-                  "feeTenantProductPrice": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "companySlots": 42
-                  },
-                  "maxSlots": 42,
-                  "dateCreated": "2026-01-15T10:30:00+00:00",
-                  "dateUpdated": "2026-01-15T10:30:00+00:00",
-                  "isFeeActive": true,
-                  "usedSlots": 42,
-                  "pendingInvitationsCount": 12,
-                  "availableSlots": 42
                 }
               },
               "multipart/form-data": {
                 "schema": {
                   "$ref": "#/components/schemas/Company.multipart-company_read"
-                },
-                "example": {
-                  "id": 42,
-                  "uuid": "01938d8e-9c4f-7c2a-b8e1-3f7a9b8c4f12",
-                  "tenant": "/api/v1/tenants/1",
-                  "name": "Boston Chapter",
-                  "status": "ACTIVE",
-                  "description": "Quarterly chapter meeting open to all members.",
-                  "contactEmail": "james.patterson@example.com",
-                  "contactPhone": "+1 415 555 0142",
-                  "contactFullName": "Boston Chapter",
-                  "address": "123 Beacon Street",
-                  "vatNumber": "US123456789",
-                  "legalName": "Boston Chapter",
-                  "registrationNumber": "string",
-                  "contactPhoneCountry": "+1 415 555 0142",
-                  "logo": "https://cdn.orgo.space/tenants/acme/logo.png",
-                  "website": "https://civic-collective.example.com",
-                  "town": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "country": {
-                      "id": 42,
-                      "name": "Boston Chapter",
-                      "code": "BOS-2026-Q1"
-                    }
-                  },
-                  "country": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "code": "BOS-2026-Q1"
-                  },
-                  "validFeeDate": "2026-01-15T10:30:00+00:00",
-                  "feeTenantProductPrice": {
-                    "id": 42,
-                    "name": "Boston Chapter",
-                    "companySlots": 42
-                  },
-                  "maxSlots": 42,
-                  "dateCreated": "2026-01-15T10:30:00+00:00",
-                  "dateUpdated": "2026-01-15T10:30:00+00:00",
-                  "isFeeActive": true,
-                  "usedSlots": 42,
-                  "pendingInvitationsCount": 12,
-                  "availableSlots": 42
                 }
               }
             }
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
             "links": {}
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
             "links": {}
           }
         },
         "summary": "Get company payment checkout",
-        "description": "Creates a Stripe checkout session for the company membership fee. The company must have a membership plan selected. Returns a checkout session URL for redirect. Requires COMPANY_MANAGE_PAYMENTS permission or tenant admin role.",
+        "description": "Creates a Stripe checkout session for the company membership fee. The company must have a membership plan selected. Returns a checkout session URL for redirect. With coverProcessingFee=1 the payer covers the Stripe processing fee: it is added as its own untaxed \"Processing fee\" line, computed server-side on the whole charge (see the membership quote's processingFee), recorded on the resulting payment, and kept out of VAT and the membership invoice. Requires COMPANY_MANAGE_PAYMENTS permission or tenant admin role.",
         "parameters": [
+          {
+            "name": "coverProcessingFee",
+            "in": "query",
+            "description": "Set to 1 to add the Stripe processing fee to the charge, so the organisation receives the full membership amount.",
+            "required": false,
+            "deprecated": false,
+            "allowEmptyValue": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "style": "form",
+            "explode": false,
+            "allowReserved": false
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -198822,6 +198720,94 @@
             "schema": [],
             "style": "form",
             "explode": true
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{uuid}/membership-quote": {
+      "get": {
+        "operationId": "company_membership_quote",
+        "tags": [
+          "Company"
+        ],
+        "responses": {
+          "200": {
+            "description": "Company resource",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company.jsonld-company_read"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company-company_read"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company.multipart-company_read"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "links": {}
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/ld+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error.jsonld"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "links": {}
+          }
+        },
+        "summary": "Quote a company membership tier",
+        "description": "Returns what the company would actually be charged for a tier right now: the tier list price, the amount after proration, the period it buys and how many of the cycle's months that is. On a calendar-anchored tenant a mid-cycle payment buys only the remainder of the cycle, so the list price is not the charge. Pass ?priceId= to quote a specific tier, otherwise the company's current tier is used. \"processingFee\" is what covering the Stripe processing fee would add to this charge: the estimate on the whole charge (the prorated net amount plus VAT) at the domestic card rate of the organisation's Stripe account country, grossed up so the organisation receives the full amount. Advisory only - checkout recomputes the charge and the fee server-side. Requires COMPANY_MANAGE_PAYMENTS permission or tenant admin role.",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "Company identifier",
+            "required": true,
+            "deprecated": false,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple",
+            "explode": false
           }
         ]
       }
