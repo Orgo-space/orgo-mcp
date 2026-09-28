@@ -3,16 +3,16 @@
  * Automated smoke test for the hosted HTTP MCP server.
  *
  * What this exercises (no real Orgo backend, no real OAuth token):
- *   1. Bearer extraction from Authorization header → /oauth/userinfo validation
+ *   1. Bearer extraction from Authorization header → /api/v1/oauth/userinfo validation
  *   2. Session creation pinned to (sub, tenant)
- *   3. tools/list returns 13 tools
+ *   3. tools/list returns 14 tools
  *   4. tools/call whoami → downstream API call carries the EXACT same bearer
  *   5. Reuse on same session = OK
  *   6. Hijack: same session id, different bearer (different sub) → 403
  *   7. Missing bearer → 401 with WWW-Authenticate header
  *
  * Strategy:
- *   - One mock HTTP server impersonates BOTH Orgo's /oauth/userinfo AND the
+ *   - One mock HTTP server impersonates BOTH Orgo's /api/v1/oauth/userinfo AND the
  *     Orgo REST API. It records every Authorization header it receives so we
  *     can assert the bearer flowed through unchanged.
  *   - The MCP HTTP server boots in single-tenant override mode pointing at
@@ -50,7 +50,7 @@ const mock = createServer((req, res) => {
   mockLog.push({ method: req.method, url: req.url, authorization: auth });
   res.setHeader('content-type', 'application/json');
 
-  if (req.url === '/oauth/userinfo') {
+  if (req.url === '/api/v1/oauth/userinfo') {
     const bearer = auth?.replace(/^Bearer\s+/i, '');
     const userinfo = userinfoForToken[bearer];
     if (!userinfo) {
@@ -150,20 +150,21 @@ async function runChecks() {
   const sessionId = r2.headers.get('mcp-session-id');
   assert('2a. 200 status', r2.status === 200, `got ${r2.status}`);
   assert('2b. mcp-session-id header present', !!sessionId);
-  const userinfoCall = mockLog.slice(mockBefore).find((l) => l.url === '/oauth/userinfo');
-  assert('2c. mock /oauth/userinfo was called', !!userinfoCall);
+  const userinfoCall = mockLog.slice(mockBefore).find((l) => l.url === '/api/v1/oauth/userinfo');
+  assert('2c. mock /api/v1/oauth/userinfo was called', !!userinfoCall);
   assert(
     '2d. userinfo received the EXACT inbound bearer (unchanged)',
     userinfoCall?.authorization === `Bearer ${REAL_TOKEN}`,
     `saw ${userinfoCall?.authorization}`,
   );
 
-  console.log('\nCheck 3: tools/list returns 13 tools');
+  console.log('\nCheck 3: tools/list returns 14 tools');
   const r3 = await fetchMcp(sessionId, REAL_TOKEN, { id: 2, method: 'tools/list' });
-  assert('3a. 13 tools advertised', r3.result?.tools?.length === 13, `got ${r3.result?.tools?.length}`);
+  assert('3a. 14 tools advertised', r3.result?.tools?.length === 14, `got ${r3.result?.tools?.length}`);
   const names = (r3.result?.tools ?? []).map((t) => t.name);
   assert('3b. includes whoami', names.includes('whoami'));
   assert('3c. includes call_endpoint', names.includes('call_endpoint'));
+  assert('3d. includes website_guide', names.includes('website_guide'));
 
   console.log('\nCheck 4: tools/call whoami — bearer flows through to API call');
   const apiBefore = mockLog.filter((l) => l.url === '/api/v1/me').length;
@@ -191,7 +192,7 @@ async function runChecks() {
 
   console.log('\nCheck 6: reuse on same session with original bearer still works');
   const r6 = await fetchMcp(sessionId, REAL_TOKEN, { id: 5, method: 'tools/list' });
-  assert('6a. still returns tools', r6.result?.tools?.length === 13);
+  assert('6a. still returns tools', r6.result?.tools?.length === 14);
 }
 
 // ─── 4. JSON-RPC helpers ────────────────────────────────────────────────────
