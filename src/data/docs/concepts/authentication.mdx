@@ -1,19 +1,243 @@
 ---
 title: 'Authentication'
-description: 'Five ways to authenticate against the Orgo API and when to use each'
+description: 'How to authenticate against the Orgo API and when to use each method'
 ---
 
-The Orgo API accepts five authentication methods. The one you should use depends on who is calling and from where.
+The Orgo API accepts several authentication methods. The one you should use depends on who is calling and from where.
 
 | Method | Who uses it | Header |
 |---|---|---|
+| **OAuth 2.0** | A third-party app or agent acting as a member | `Authorization: Bearer <access_token>` |
 | **Api-Token** | Servers, scripts, CRON jobs you control | `Api-Token: <token>` |
 | **Bearer JWT** | A user who logged in with email + password | `Authorization: Bearer <jwt>` |
-| **OAuth 2.0** | A third-party app acting on behalf of an Orgo user | Standard OAuth flow |
 | **OTP** | A user logging in via emailed one-time code | Returns a JWT, then `Authorization: Bearer <jwt>` |
 | **X-Contact-Hash** | An emailed contact opening an event link | `X-Contact-Hash: <hash>` |
+| **Legacy SSO** | Existing apps using the `*-sso` handshake — [deprecated](#legacy-sso-deprecated) | `Authorization: Bearer <access_token>` |
 
-For most integrations the answer is **Api-Token**. The other four exist for specific user-facing flows.
+Two quick rules of thumb:
+
+- Building an app that logs members in **as themselves**? Use **OAuth 2.0**. It is the supported path for third-party apps and agents.
+- Running a backend job that acts **as itself**, with no end user in the loop? Use an **Api-Token**.
+
+<Note>
+Every URL below is on **your tenant's host**. The host *is* the tenant selector — the bare `app.orgo.space` domain resolves no tenant and returns `404`. Examples use `acme.orgo.space`; substitute your own. See [Tenancy](/api-reference/concepts/tenancy).
+</Note>
+
+---
+
+## OAuth 2.0 (third-party apps and agents)
+
+Orgo is a standards OAuth 2.0 authorization server with OIDC discovery. Use the authorization code flow with PKCE.
+
+### Discovery
+
+Read the metadata rather than hardcoding URLs:
+
+```bash
+curl https://acme.orgo.space/.well-known/oauth-authorization-server
+# alias:
+curl https://acme.orgo.space/.well-known/openid-configuration
+```
+
+| Key | Value |
+|---|---|
+| `issuer` | `https://acme.orgo.space` |
+| `authorization_endpoint` | `{issuer}/authorize` |
+| `token_endpoint` | `{issuer}/api/v1/oauth/token` |
+| `userinfo_endpoint` | `{issuer}/api/v1/oauth/userinfo` |
+| `jwks_uri` | `{issuer}/api/v1/oauth/jwks.json` |
+| `registration_endpoint` | `{issuer}/api/v1/oauth/register` |
+| `scopes_supported` | `["profile","email","groups","roles"]` |
+| `response_types_supported` | `["code"]` |
+| `grant_types_supported` | `["authorization_code","refresh_token"]` |
+| `code_challenge_methods_supported` | `["S256"]` |
+| `token_endpoint_auth_methods_supported` | `["none","client_secret_basic","client_secret_post"]` |
+| `subject_types_supported` | `["public"]` |
+| `id_token_signing_alg_values_supported` | `["RS256"]` |
+
+The consent screen sits at `/authorize` while the machine endpoints sit under `/api/v1/oauth/*`. That asymmetry is intentional — use the URLs exactly as discovery returns them.
+
+<Warning>
+The discovery document is **per tenant**: `issuer` reflects the host you fetched it from. Fetch discovery once per tenant host. Never reuse one tenant's document for another.
+</Warning>
+
+### Registering a client
+
+Two kinds of client, differing in whether a secret exists.
+
+<Tabs>
+  <Tab title="Public (self-registered)">
+    Any developer can register a public client. No authentication required, rate limited to **10 registrations per hour per IP**:
+
+    ```bash
+    curl -X POST https://acme.orgo.space/api/v1/oauth/register \
+      -H "Content-Type: application/json" \
+      -d '{
+        "redirect_uris": ["https://your-app.example.com/callback"],
+        "client_name": "Civic Forum"
+      }'
+    ```
+
+    Returns `201` with a `client_id`, `client_id_issued_at`, and your echoed metadata. **No client secret is issued** — PKCE is the only client authentication.
+
+    Optional metadata: `client_uri`, `logo_uri`, `policy_uri`, `tos_uri`. When no scopes are requested the defaults are `profile` and `email`.
+  </Tab>
+
+  <Tab title="Confidential (admin-created)">
+    A tenant admin creates the app in **Developer → Apps**. This issues both a `client_id` and a `client_secret`, and the client **must** authenticate at the token endpoint.
+
+    Store the secret server-side only. See [OAuth Server](/platform/oauth) for the admin side.
+  </Tab>
+</Tabs>
+
+### Step 1 — send the member to the consent screen
+
+```
+GET https://acme.orgo.space/authorize
+  ?response_type=code
+  &client_id=YOUR_CLIENT_ID
+  &redirect_uri=https://your-app.example.com/callback
+  &scope=profile%20email
+  &state=<csrf-random>
+  &code_challenge=<BASE64URL(SHA256(verifier))>
+  &code_challenge_method=S256
+```
+
+<Warning>
+**PKCE is mandatory for every client, confidential ones included.** This is stricter than baseline OAuth 2.0 and matches OAuth 2.1. The server rejects violations with `invalid_request`:
+
+- `code_challenge_method` must be `S256`. `plain` is not supported.
+- `code_challenge` must match `[A-Za-z0-9-._~]{43,128}`.
+- `code_verifier` must match the same charset and length rules.
+</Warning>
+
+If the member is not signed in, Orgo sends them through login and returns them to the consent screen automatically — including when they sign in with Google, Apple or Microsoft. Your app does nothing for this.
+
+### Step 2 — exchange the code
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=$CODE" \
+  -d "redirect_uri=https://your-app.example.com/callback" \
+  -d "client_id=$CLIENT_ID" \
+  -d "code_verifier=$VERIFIER"
+```
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "...",
+  "scope": "profile email"
+}
+```
+
+Confidential clients additionally authenticate — see [Client authentication](#client-authentication) below. `redirect_uri` must exactly equal the one used in step 1.
+
+### Step 3 — refresh
+
+```bash
+curl -X POST https://acme.orgo.space/api/v1/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=$REFRESH_TOKEN" \
+  -d "client_id=$CLIENT_ID"
+```
+
+<Warning>
+**Refresh tokens rotate.** Every refresh returns a new `refresh_token` and invalidates the one you sent. Persist the new value on each refresh — a client that keeps replaying its original refresh token will stop working.
+</Warning>
+
+### Token lifetimes
+
+| Token | Lifetime |
+|---|---|
+| Access token | **1 hour** |
+| Refresh token | **30 days**, rotated on every use |
+| Legacy SSO access token | **1 year**, no refresh token |
+
+### Authorization code rules
+
+- **Single use.** Redeeming twice fails with `invalid_grant`.
+- **A replay by an authenticated client revokes the tokens that code produced.** This is the OAuth 2.1 interception defence — never retry a code blindly after a successful exchange.
+- A *failed client authentication* leaves the code redeemable, so a client that fixes its credentials can safely retry the same code.
+
+### Client authentication
+
+| Method | Who | How |
+|---|---|---|
+| `none` | Public / self-registered | PKCE only. Sending a `client_secret` is an error (`invalid_client`). |
+| `client_secret_basic` | Confidential | `Authorization: Basic base64(urlencode(id):urlencode(secret))` |
+| `client_secret_post` | Confidential | `client_secret` form field |
+
+Use exactly one method:
+
+- Credentials sent by more than one method → `invalid_request`.
+- A `client_id` in the Basic header disagreeing with the body → `invalid_request`.
+- A confidential client omitting its secret → `invalid_client` (`401`, with `WWW-Authenticate: Basic realm="orgo-oauth"`).
+
+Token-endpoint errors are RFC 6749 shaped and sent with `Cache-Control: no-store`:
+
+```json
+{ "error": "invalid_client", "error_description": "…" }
+```
+
+Codes in use: `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`, `rate_limit_exceeded`.
+
+**Wrong secrets are throttled.** Repeated *failed* client authentications for the same `client_id` are rate limited: after 10 failures in 5 minutes, further failures return `429 rate_limit_exceeded` with a `Retry-After` header instead of `401`. A request presenting the correct secret is never throttled, however many failed attempts preceded it — so a healthy client is unaffected, and a `429` here means your credentials are wrong, not that you are calling too often.
+
+### Using the access token
+
+```bash
+curl https://acme.orgo.space/api/v1/oauth/userinfo \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Returns an OIDC-shaped profile (`sub`, `name`, `email`, …). The same token works against the rest of the API:
+
+```bash
+curl https://acme.orgo.space/api/v1/users/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Access tokens are RS256 JWTs, verifiable against `jwks_uri`.
+
+<Warning>
+Tokens are also **revocable server-side**, and revocation takes effect on the next request. A token that still looks valid locally — unexpired signature, `exp` in the future — can be rejected. Do not treat a local expiry check as proof a token still works; handle `401` at any time.
+</Warning>
+
+### What actually bounds a token
+
+Two limits surprise most integrators. Neither is configurable per request.
+
+**An app acts as a member, never as an administrator.** A token issued to an app that a tenant admin created is capped to member level (`ROLE_USER`), regardless of what the authorizing member can do in the Orgo UI. If a tenant administrator authorizes your app, your token still cannot perform administrator actions.
+
+**Read-only apps are gated by HTTP method.** Every app is flagged either read-only or permitted to act on the member's behalf. A read-only app may use `GET`, `HEAD` and `OPTIONS` only; any `POST`, `PUT`, `PATCH` or `DELETE` is rejected with `403`:
+
+```
+This application has read-only access and may not act on your behalf.
+```
+
+<Warning>
+The gate is by **HTTP method, not intent**. An endpoint that performs a read via `POST` — some search endpoints do — is still blocked for a read-only app. If your integration needs those, it must be registered with acting enabled.
+</Warning>
+
+The consent screen shows the member which of these applies before they approve.
+
+### Scopes
+
+`profile`, `email`, `groups` and `roles` are advertised in discovery, shown on the consent screen, and recorded in the token's `scope` claim.
+
+<Note>
+Scopes describe what an application **requests** and what the member **approves** when they authorize it. What the resulting token can actually reach is bounded by the member-level cap and the application's read-only / act-on-behalf setting described above.
+</Note>
+
+Request only the scopes you need — it keeps the consent screen short and makes it clearer to the member what they are approving.
+
+Full walkthrough: [Integrate "Log in with Orgo"](/api-reference/recipes/integrate-oauth-login). Admin-side setup: [OAuth Server](/platform/oauth).
 
 ---
 
@@ -71,45 +295,6 @@ JWTs are scoped to the tenant the login was made against — calling a different
 
 ---
 
-## OAuth 2.0 (third-party apps)
-
-When you want users to "Log in with Orgo" from a third-party site, register an OAuth app at **Settings → Developers → OAuth Applications** and use the Authorization Code flow:
-
-```
-1. Redirect user to:
-   https://app.orgo.space/oauth/authorize
-     ?client_id=YOUR_CLIENT_ID
-     &redirect_uri=YOUR_CALLBACK
-     &response_type=code
-     &scope=profile+email
-     &state=<csrf_token>
-
-2. After approval, Orgo redirects to:
-   YOUR_CALLBACK?code=<auth_code>&state=<csrf_token>
-
-3. Exchange the code server-side:
-   POST https://app.orgo.space/oauth/token
-     grant_type=authorization_code
-     code=<auth_code>
-     client_id=YOUR_CLIENT_ID
-     client_secret=YOUR_CLIENT_SECRET
-     redirect_uri=YOUR_CALLBACK
-
-4. Use the access token:
-   GET https://app.orgo.space/oauth/userinfo
-     Authorization: Bearer <access_token>
-```
-
-Available scopes: `profile`, `email`, `groups`, `roles`. Request only what you need — fewer scopes means a simpler consent screen for the user.
-
-Full setup walkthrough: [OAuth Server](/platform/oauth).
-
-<Warning>
-Single-page apps cannot safely store the client secret. Use **PKCE** (add `code_challenge` and `code_challenge_method=S256` to the authorize call) and skip the secret on the token exchange, or do the exchange server-side.
-</Warning>
-
----
-
 ## OTP (one-time password)
 
 For users who do not have a password — or who prefer a magic-link flow — Orgo can send a 6-digit code by email. Two steps:
@@ -145,6 +330,36 @@ This authenticates the contact for that specific event and that specific contact
 
 ---
 
+## Legacy SSO (deprecated)
+
+<Warning>
+**Deprecated.** The `/api/v1/*-sso` token exchange is deprecated in favour of [OAuth 2.0](#oauth-20-third-party-apps-and-agents). Existing integrations continue to work and **no removal date has been set**. New integrations must use the authorization code flow. Responses from these endpoints now carry a `Deprecation` header and a `Link: rel="deprecation"` pointer to this section.
+</Warning>
+
+If you arrived here from a `Deprecation` header, this is the flow you are using. It is a proprietary handshake that predates Orgo's OAuth support:
+
+| Endpoint | Role in the handshake |
+|---|---|
+| `POST /api/v1/request-token-sso` | App exchanges its `appId` + `appSecret` for a `requestToken` |
+| `GET /api/v1/verify-request-token-sso` | Looks up a `requestToken`, returns the app's display name for the login screen |
+| `POST /api/v1/login-check-sso` | Member submits credentials against the `requestToken`, returns a `redirectUri` |
+| `GET /api/v1/verify-success-token-sso` | App exchanges the `successToken` for the member's profile and an access token |
+| `GET /api/v1/logout-sso` | Discards the login request |
+
+`verify-success-token-sso` returns a flat member profile — `id`, `cardId`, `firstName`, `lastName`, `email`, `status`, `localCenter`, `town`, membership dates — alongside a **1-year** access token with no refresh token. The access token is minted once per login; re-reading the profile does not mint a new one or invalidate the existing token.
+
+Only the token exchange is deprecated. Creating apps and regenerating their secrets is **not** deprecated, and tokens issued this way are subject to the same [member-level cap and read-only gate](#what-actually-bounds-a-token) as OAuth tokens.
+
+### Migrating to OAuth 2.0
+
+1. **Keep your existing `client_id` and `client_secret`.** The secret hash format is unchanged, so no rotation is required to migrate.
+2. Replace the `request-token-sso` redirect with `GET /authorize`, adding PKCE.
+3. Replace `verify-success-token-sso` with `POST /api/v1/oauth/token`.
+4. Replace the profile payload from `verify-success-token-sso` with `GET /api/v1/oauth/userinfo`.
+5. Expect a **1-hour access token plus a rotating refresh token** instead of the legacy 1-year token — add refresh handling before you switch.
+
+---
+
 ## Picking the right method
 
 <AccordionGroup>
@@ -157,7 +372,11 @@ This authenticates the contact for that specific event and that specific contact
   </Accordion>
 
   <Accordion title="I want users to click 'Log in with Orgo' on my third-party site">
-    **OAuth 2.0.** Register an OAuth application and follow the Authorization Code flow.
+    **OAuth 2.0.** Self-register a public client at `/api/v1/oauth/register`, or have a tenant admin create a confidential one, then run the authorization code flow with PKCE.
+  </Accordion>
+
+  <Accordion title="I'm building an AI agent that acts for a member">
+    **OAuth 2.0**, registered with acting enabled. Remember the two bounds: the token is capped to member level, and a read-only app cannot issue any `POST`, `PUT`, `PATCH` or `DELETE` — including reads implemented as `POST`.
   </Accordion>
 
   <Accordion title="I want password-less login by email code">
@@ -167,6 +386,10 @@ This authenticates the contact for that specific event and that specific contact
   <Accordion title="I'm building the receiving end of an Orgo-sent email link for non-members">
     **X-Contact-Hash.** The hash is in the URL Orgo emails; lift it into the header on subsequent API calls.
   </Accordion>
+
+  <Accordion title="I already use the *-sso endpoints">
+    That is the [legacy handshake](#legacy-sso-deprecated) — still supported, now deprecated. Follow the migration steps when you can; there is no removal date.
+  </Accordion>
 </AccordionGroup>
 
 ---
@@ -175,14 +398,19 @@ This authenticates the contact for that specific event and that specific contact
 
 | Status | What it means | Fix |
 |---|---|---|
-| `401 Unauthorized` | Header missing, malformed, or invalid token | Re-send the header; if the token is right, it may have been revoked or expired |
-| `403 Forbidden` | Authenticated, but lacks permission OR token is read-only and you sent a write | Check `Api-Token` access level; check the user's role for this resource |
+| `401 Unauthorized` | Header missing, malformed, or invalid token | Re-send the header; if the token looks right it may have been revoked — revocation applies on the next request, so handle this at any time |
+| `403 Forbidden` — `This API token has read-only access.` | A read-only **Api-Token** was used for a write | Use a read/write token, or switch the call to `GET` |
+| `403 Forbidden` — `This application has read-only access and may not act on your behalf.` | A read-only **OAuth app** attempted a non-`GET`/`HEAD`/`OPTIONS` call | The app must be registered with acting enabled — see [what bounds a token](#what-actually-bounds-a-token) |
+| `403 Forbidden` (other) | Authenticated, but the member lacks permission — remember an app token is capped to member level | Check the member's role for this resource |
 | `404 Not Found` | Resource exists but in a different tenant | Confirm you are calling the correct subdomain — see [Tenancy](/api-reference/concepts/tenancy) |
+
+Token-endpoint errors use the RFC 6749 envelope instead — see [client authentication](#client-authentication).
 
 ---
 
 ## Related
 
 - [Tenancy](/api-reference/concepts/tenancy) — getting the tenant context right is half of getting auth right
+- [Integrate "Log in with Orgo"](/api-reference/recipes/integrate-oauth-login) — end-to-end OAuth walkthrough
 - [Errors](/api-reference/concepts/errors) — full error envelope reference
 - [OAuth Server](/platform/oauth) — admin-side setup for OAuth applications

@@ -60,6 +60,7 @@ Each event is delivered as an HTTPS `POST` with a JSON body and these headers:
 | `X-Webhook-Event` | The event type — e.g. `user.created` |
 | `X-Webhook-Delivery` | Unique delivery ID — log this to correlate with the Orgo dashboard |
 | `X-Webhook-Timestamp` | Unix timestamp of when the delivery was sent |
+| `X-Webhook-Signature` | `t=<timestamp>,v1=<hex>`, verified in Step 3 |
 | `User-Agent` | `OrgoWebhook/1.0` |
 
 Body shape (Stripe-inspired):
@@ -93,7 +94,58 @@ For `*.updated` events, `previous_attributes` carries the diff — fields not me
 
 ---
 
-## Step 3 — Be idempotent
+## Step 3 — Verify the signature
+
+Do this before you look at the body. The endpoint is public, so anything that reaches it is unauthenticated until the signature says otherwise.
+
+`X-Webhook-Signature` is `t=<unix seconds>,v1=<hex>`, where `v1` is `HMAC-SHA256(secret, "<t>." + raw request body)`. The `t` is the same value as `X-Webhook-Timestamp`, and it is inside the signed string, so a captured delivery cannot be re-stamped and replayed.
+
+```python
+import hashlib, hmac, time
+
+TOLERANCE_SECONDS = 300
+
+def verify(raw_body: bytes, header: str, secret: str) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    if "t" not in parts or "v1" not in parts:
+        return False
+
+    if abs(time.time() - int(parts["t"])) > TOLERANCE_SECONDS:
+        return False   # replayed, or your clock is wrong
+
+    expected = hmac.new(
+        secret.encode(),
+        parts["t"].encode() + b"." + raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, parts["v1"])
+
+
+@app.post("/webhooks/orgo")
+def receive():
+    if not verify(request.get_data(), request.headers.get("X-Webhook-Signature", ""), SECRET):
+        return "", 401
+    ...
+```
+
+Three rules the code above is built around:
+
+- **Hash the raw bytes.** `request.get_data()`, not `request.get_json()` re-serialized. Key order and whitespace differ after a round trip, and the MAC changes with them.
+- **Compare in constant time.** `hmac.compare_digest`, `crypto.timingSafeEqual`, `hash_equals`, never `==`.
+- **Do not deduplicate on the signature.** Retries are re-signed at send time, so the same delivery ID arrives with a different `v1`. Dedupe on the payload `id`, as in Step 4.
+
+Returning `401` marks the delivery failed and Orgo retries it, which is what you want when the cause is a secret you have just rotated on one side only.
+
+A JavaScript version of the same function is in the [webhooks concept page](/api-reference/concepts/webhooks#authenticating-the-sender).
+
+<Warning>
+This format shipped in August 2026, replacing a short non-keyed checksum. There is no compatibility header: a receiver comparing the old value must move to the recipe above.
+</Warning>
+
+---
+
+## Step 4 — Be idempotent
 
 Orgo may deliver the same event twice — retries on transient failures, network races on at-least-once delivery. Your handler must be safe to call repeatedly with the same payload.
 
@@ -113,7 +165,7 @@ Insert the row *inside the same transaction* as the side effect, so a crash mid-
 
 ---
 
-## Step 4 — Respond fast
+## Step 5 — Respond fast
 
 Orgo waits up to 30 seconds for a response before treating the delivery as failed. Long-running work (sending a follow-up email, querying a slow downstream API) should go into a background queue. The webhook handler's job is to acknowledge receipt and durably queue the work — not perform it.
 
@@ -129,7 +181,7 @@ Return any 2xx; Orgo doesn't care about the body.
 
 ---
 
-## Step 5 — Test before going live
+## Step 6 — Test before going live
 
 The test endpoint fires a synthetic event of your chosen type to the subscription URL:
 
@@ -144,7 +196,7 @@ The synthetic payload uses fixture data (not real user data) but carries the sam
 
 ---
 
-## Step 6 — Replay failed deliveries
+## Step 7 — Replay failed deliveries
 
 Every delivery attempt — success or failure — is logged. To list:
 

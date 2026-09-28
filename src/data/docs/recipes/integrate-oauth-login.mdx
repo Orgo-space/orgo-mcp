@@ -3,7 +3,11 @@ title: 'Integrate "Log in with Orgo" (OAuth)'
 description: 'End-to-end OAuth 2.0 Authorization Code flow — register the app, redirect, exchange, fetch user info'
 ---
 
-This walkthrough adds "Log in with Orgo" to a third-party application. It uses the OAuth 2.0 Authorization Code flow (with PKCE for browser apps).
+This walkthrough adds "Log in with Orgo" to a third-party application. It uses the OAuth 2.0 authorization code flow with PKCE.
+
+<Note>
+Every URL here is on the tenant's own host — `acme.orgo.space` in these examples, or the organization's custom domain. The bare `app.orgo.space` domain resolves no tenant and returns `404`. See [Tenancy](/api-reference/concepts/tenancy).
+</Note>
 
 Who is this for: SaaS apps your members use that should not require a second login (member-only forums, member-only deals platforms, internal tools, partner services).
 
@@ -20,25 +24,54 @@ If you're building a single integration that consumes "all members of Civic Coll
 
 ## Prerequisites
 
-- An admin in the Orgo tenant who can create an OAuth application.
 - A callback URL on your app served over HTTPS (localhost is allowed for development).
+- For a confidential client: an admin in the Orgo tenant who can create the app.
 
 ---
 
-## Step 1 — Register your OAuth application
+## Step 0 — Read the discovery document
 
-In the Orgo admin UI: **Settings → Developers → OAuth Applications → Create Application**.
+Don't hardcode endpoints. Every tenant publishes its own metadata, and `issuer` reflects the host you fetch it from:
 
-You'll provide:
+```bash
+curl https://acme.orgo.space/.well-known/oauth-authorization-server
+```
 
-| Field | What to enter |
-|---|---|
-| **Name** | What users see during authorization — "Civic Forum" |
-| **Description** | Internal reference |
-| **Redirect URIs** | Exact callback URLs (one per line) — exact match required |
-| **Scopes** | What data the app can request |
+Use `authorization_endpoint`, `token_endpoint` and `userinfo_endpoint` from the response. Fetch this once per tenant you integrate with — never reuse one tenant's document for another.
 
-Orgo returns a **Client ID** (public) and a **Client Secret** (one-time, store securely server-side). The Client Secret cannot be retrieved later — rotate by deleting and re-creating if lost.
+---
+
+## Step 1 — Register your client
+
+<Tabs>
+  <Tab title="Public client (self-service)">
+    Best for SPAs, mobile apps, and anything that cannot keep a secret. No admin involvement and no authentication needed, but limited to **10 registrations per hour per IP**:
+
+    ```bash
+    curl -X POST https://acme.orgo.space/api/v1/oauth/register \
+      -H "Content-Type: application/json" \
+      -d '{
+        "redirect_uris": ["https://your-app.example.com/oauth/callback"],
+        "client_name": "Civic Forum"
+      }'
+    ```
+
+    Returns `201` with a `client_id`. **No secret is issued** — PKCE is your only client authentication. Optional metadata: `client_uri`, `logo_uri`, `policy_uri`, `tos_uri`.
+  </Tab>
+
+  <Tab title="Confidential client (admin)">
+    In the Orgo admin UI: **Developer → Apps → Create Application**.
+
+    | Field | What to enter |
+    |---|---|
+    | **Name** | What users see during authorization — "Civic Forum" |
+    | **Redirect URIs** | Exact callback URLs (one per line) — exact match required |
+    | **Scopes** | What the app requests on the consent screen |
+    | **Act on behalf of members** | Off makes the app read-only — see [step 7](#step-7-know-what-your-token-cannot-do) |
+
+    Orgo returns a **Client ID** and a **Client Secret** (one-time, store server-side only).
+  </Tab>
+</Tabs>
 
 ---
 
@@ -47,28 +80,34 @@ Orgo returns a **Client ID** (public) and a **Client Secret** (one-time, store s
 When a user clicks "Log in with Orgo" in your app, redirect them to:
 
 ```
-https://app.orgo.space/oauth/authorize
-  ?client_id=YOUR_CLIENT_ID
+https://acme.orgo.space/authorize
+  ?response_type=code
+  &client_id=YOUR_CLIENT_ID
   &redirect_uri=https://your-app.example.com/oauth/callback
-  &response_type=code
   &scope=profile+email+groups
   &state=<csrf_token>
+  &code_challenge=<base64url(sha256(verifier))>
+  &code_challenge_method=S256
 ```
 
 | Parameter | Purpose |
 |---|---|
+| `response_type` | Always `code` |
 | `client_id` | The Client ID from Step 1 |
 | `redirect_uri` | Must match a registered URI exactly (including trailing slash) |
-| `response_type` | Always `code` |
 | `scope` | Space-separated list — see [scopes](#available-scopes) |
 | `state` | Random string you generate per-request; check on callback to prevent CSRF |
+| `code_challenge` | `BASE64URL(SHA256(code_verifier))` |
+| `code_challenge_method` | Always `S256` |
 
-For browser-based apps, add PKCE:
+<Warning>
+**PKCE is mandatory for every client**, confidential ones included — this is stricter than baseline OAuth 2.0 and matches OAuth 2.1. The server rejects violations with `invalid_request`:
 
-```
-&code_challenge=<base64url(sha256(verifier))>
-&code_challenge_method=S256
-```
+- `code_challenge_method` must be `S256`; `plain` is not supported.
+- Both `code_challenge` and `code_verifier` must match `[A-Za-z0-9-._~]{43,128}`.
+</Warning>
+
+If the member isn't signed in, Orgo handles login and returns them to the consent screen automatically — including via Google, Apple or Microsoft. You don't handle that.
 
 ---
 
@@ -86,29 +125,38 @@ Verify `state` matches the one you stored, then move on.
 
 ## Step 4 — Exchange the code for an access token
 
-Do this *server-side* — the Client Secret must never reach the browser. Form-encoded body, not JSON.
+Form-encoded body, not JSON. A confidential client does this server-side — the Client Secret must never reach the browser.
 
-```bash
-curl -X POST https://app.orgo.space/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code" \
-  -d "code=$AUTH_CODE" \
-  -d "client_id=$CLIENT_ID" \
-  -d "client_secret=$CLIENT_SECRET" \
-  -d "redirect_uri=https://your-app.example.com/oauth/callback"
-```
+<Tabs>
+  <Tab title="Public client">
+    PKCE only. Sending a `client_secret` here is an error (`invalid_client`):
 
-For PKCE, replace `client_secret` with `code_verifier`:
+    ```bash
+    curl -X POST https://acme.orgo.space/api/v1/oauth/token \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "grant_type=authorization_code" \
+      -d "code=$AUTH_CODE" \
+      -d "client_id=$CLIENT_ID" \
+      -d "code_verifier=$PKCE_VERIFIER" \
+      -d "redirect_uri=https://your-app.example.com/oauth/callback"
+    ```
+  </Tab>
 
-```bash
-curl -X POST https://app.orgo.space/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code" \
-  -d "code=$AUTH_CODE" \
-  -d "client_id=$CLIENT_ID" \
-  -d "code_verifier=$PKCE_VERIFIER" \
-  -d "redirect_uri=https://your-app.example.com/oauth/callback"
-```
+  <Tab title="Confidential client">
+    Send the `code_verifier` **and** authenticate. Pick exactly one authentication method — `client_secret_basic` here, or `client_secret_post` via a `client_secret` field:
+
+    ```bash
+    curl -X POST https://acme.orgo.space/api/v1/oauth/token \
+      -u "$CLIENT_ID:$CLIENT_SECRET" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "grant_type=authorization_code" \
+      -d "code=$AUTH_CODE" \
+      -d "client_id=$CLIENT_ID" \
+      -d "code_verifier=$PKCE_VERIFIER" \
+      -d "redirect_uri=https://your-app.example.com/oauth/callback"
+    ```
+  </Tab>
+</Tabs>
 
 Response:
 
@@ -117,9 +165,14 @@ Response:
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "refresh_token": "f3c7a..."
+  "refresh_token": "f3c7a...",
+  "scope": "profile email groups"
 }
 ```
+
+<Warning>
+The code is **single use**. Redeeming it twice fails with `invalid_grant` — and a replay by an authenticated client **revokes the tokens that code already produced**. Never retry a code after a successful exchange. (A retry after a *failed client authentication* is safe: the code stays redeemable so you can fix credentials and try again.)
+</Warning>
 
 ---
 
@@ -128,7 +181,7 @@ Response:
 The access token works as a normal Bearer JWT.
 
 ```bash
-curl https://app.orgo.space/oauth/userinfo \
+curl https://acme.orgo.space/api/v1/oauth/userinfo \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
@@ -158,29 +211,54 @@ curl https://acme.orgo.space/api/v1/me \
 
 ## Step 6 — Refresh expired tokens
 
-Access tokens expire after roughly an hour (`expires_in` in the original response). Use the refresh token to get a new pair without sending the user back through the consent screen:
+Access tokens last **1 hour** (`expires_in` in the original response). Refresh tokens last **30 days**. Use the refresh token to get a new pair without sending the user back through the consent screen:
 
 ```bash
-curl -X POST https://app.orgo.space/oauth/token \
+curl -X POST https://acme.orgo.space/api/v1/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=refresh_token" \
   -d "refresh_token=$REFRESH_TOKEN" \
-  -d "client_id=$CLIENT_ID" \
-  -d "client_secret=$CLIENT_SECRET"
+  -d "client_id=$CLIENT_ID"
 ```
 
-Cache the new pair (always). Do not call refresh on every API request — only when a request returns `401`.
+Confidential clients authenticate here too, exactly as in step 4.
+
+<Warning>
+**Refresh tokens rotate.** Each refresh returns a *new* `refresh_token` and invalidates the one you just sent. Persist the new value every time — an app that keeps replaying its original refresh token will work once and then start failing with `invalid_grant`.
+</Warning>
+
+Do not call refresh on every API request — only when a request returns `401`.
+
+---
+
+## Step 7 — Know what your token cannot do
+
+Two limits catch most integrations, and neither is adjustable per request.
+
+**An app acts as a member, never as an administrator.** The token is capped to member level (`ROLE_USER`) no matter who authorized it. If a tenant administrator connects your app, it still cannot perform administrator actions.
+
+**Read-only apps are gated by HTTP method.** If the app is registered read-only it may use `GET`, `HEAD` and `OPTIONS` only. Anything else returns `403`:
+
+```
+This application has read-only access and may not act on your behalf.
+```
+
+The gate is by method, not intent — an endpoint that performs a read via `POST` is still blocked. If you need those, register the app with acting enabled.
 
 ---
 
 ## Available scopes
 
-| Scope | What it grants access to |
+| Scope | What the member is asked to approve |
 |---|---|
 | `profile` | Name, profile picture, display name |
 | `email` | Email address |
 | `groups` | Group + local-center memberships |
 | `roles` | User roles (`ROLE_USER`, `ROLE_MEMBER`, `ROLE_ADMIN`, etc.) |
+
+<Note>
+Scopes describe what an application **requests** and what the member **approves** when they authorize it. What the resulting token can actually reach is bounded by the member-level cap and the application's read-only / act-on-behalf setting in [step 7](#step-7-know-what-your-token-cannot-do).
+</Note>
 
 Request only what you need — fewer scopes makes the consent screen shorter and clearer.
 
@@ -198,7 +276,13 @@ Request only what you need — fewer scopes makes the consent screen shorter and
   </Accordion>
 
   <Accordion title="Token exchange returns `invalid_client`">
-    Three causes: wrong `client_id`, wrong `client_secret`, or the secret was rotated (delete + recreate the app and re-store). For PKCE flows, sending both `client_secret` and `code_verifier` also fails — pick one.
+    Wrong `client_id`, wrong `client_secret`, or a confidential client omitting its secret entirely (that one returns `401` with `WWW-Authenticate: Basic realm="orgo-oauth"`). A **public** client sending a `client_secret` also fails — it has none, and PKCE is its only authentication.
+
+    Note that sending `client_secret` *and* `code_verifier` together is correct for a confidential client: PKCE applies to every client. What is not allowed is sending credentials by more than one method at once — Basic header *and* form field — which returns `invalid_request`.
+  </Accordion>
+
+  <Accordion title="Token exchange returns `429 rate_limit_exceeded`">
+    Repeated *failed* client authentications for the same `client_id` are throttled: after 10 failures in 5 minutes you get `429` with a `Retry-After` header instead of `401`. This means your credentials are wrong, not that you are calling too often — a request with the correct secret is never throttled, however many failures came before it. Fix the secret rather than backing off.
   </Accordion>
 
   <Accordion title="The user's groups don't match what I see in the Orgo UI">
@@ -209,8 +293,10 @@ Request only what you need — fewer scopes makes the consent screen shorter and
     Use PKCE without a Client Secret. Generate a verifier (random 43-128 chars), hash it with SHA-256, base64url-encode the hash, send the hash as `code_challenge` on authorize, then send the verifier as `code_verifier` on token exchange. The Client Secret stays unused.
   </Accordion>
 
-  <Accordion title="Tokens revoked on the Orgo side don't immediately expire">
-    Access tokens are stateless JWTs — they remain valid until `exp` regardless of revocation. Refresh tokens are stateful — refreshing a revoked token returns `400 invalid_grant`. For high-security apps, set the access token lifetime shorter via Orgo support and rely on refresh-token revocation as the kill switch.
+  <Accordion title="A token that looks valid is being rejected">
+    Access tokens are RS256 JWTs, but they are **revocable server-side** and revocation takes effect on the **next request**. A token whose signature verifies and whose `exp` is still in the future can still be rejected.
+
+    Do not treat a local expiry check as proof a token works — handle `401` at any point in a token's lifetime and fall back to refresh, then to re-authorization. Verify signatures against `jwks_uri` from the discovery document.
   </Accordion>
 </AccordionGroup>
 
@@ -218,6 +304,7 @@ Request only what you need — fewer scopes makes the consent screen shorter and
 
 ## What to do next
 
-- [Authentication](/api-reference/concepts/authentication) — comparison of OAuth vs Api-Token vs JWT vs OTP
+- [Authentication](/api-reference/concepts/authentication) — comparison of OAuth vs Api-Token vs JWT vs OTP, and the full discovery reference
+- [Migrating from legacy SSO](/api-reference/concepts/authentication#legacy-sso-deprecated) — if you already use the `*-sso` handshake
 - [OAuth Server](/platform/oauth) — admin-side documentation on managing OAuth applications
 - [Tenancy](/api-reference/concepts/tenancy) — how OAuth tokens carry tenant scope

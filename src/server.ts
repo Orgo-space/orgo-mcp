@@ -24,6 +24,10 @@ export interface BuildOptions {
 export function buildServer({ config, client }: BuildOptions): McpServer {
   const index = new OpenApiIndex();
   const httpClient = client ?? new OrgoClient(config);
+  // Counted from the shipped catalog, not written down: the hard-coded figures
+  // stayed at the v0.1.0 spec (458 / 118) long after the API had grown.
+  const operationCount = index.endpoints.length;
+  const familyCount = index.tags.length;
 
   const server = new McpServer(
     {
@@ -38,7 +42,7 @@ export function buildServer({ config, client }: BuildOptions): McpServer {
       },
       instructions:
         `You have access to the Orgo API — a member-management platform covering people, events, payments, ` +
-        `contracts, communications, governance, and learning across 458 endpoints and 118 resource families.\n\n` +
+        `contracts, communications, governance, and learning across ${operationCount} endpoints and ${familyCount} resource families.\n\n` +
         `Workflow:\n` +
         `  1. If unsure where to start, read orgo://docs/overview or orgo://docs/tags.\n` +
         `  2. Use list_endpoints / list_resources to discover the right operation.\n` +

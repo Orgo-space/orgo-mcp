@@ -470,5 +470,21 @@
   {
     "name": "WorkflowExecution",
     "description": "Resource 'WorkflowExecution' operations."
+  },
+  {
+    "name": "Website",
+    "description": "The tenant's public website: pages and news articles built from a fixed\nvocabulary of sections, plus both menus, redirects, design settings and\nmedia. Start at `GET /api/v1/website-guide` (the process — what to produce,\nin what order, and where to stop and ask a person) and\n`GET /api/v1/website-schema` (the vocabulary — every section type with its\nintent and one valid example). Both are generated from the code that\nvalidates the writes, so they cannot drift from what a save accepts.\n\nA whole site moves through `GET /website-snapshot` (read) and\n`POST /website-import` (dry-run, then apply, in one transaction); a single\nchange goes through `PUT /website-page/{slug}` or\n`PUT /website-article/{slug}`. Images are never URLs in a block —\n`POST /website-media/import` fetches one and returns the filename the block\nstores. Nothing here puts a site in front of visitors: an import sets page\nstatuses and leaves the live switch alone, and `POST /website-publish` is a\nseparate, deliberate call. Every write takes a snapshot first, and\n`POST /website-restore/{uuid}` puts the site back."
+  },
+  {
+    "name": "WebsiteArticle",
+    "description": "A news article: a page with a date. The body is the same block list through\nthe same sanitizer, so everything the section vocabulary can express is\navailable in one. `publishedAt` is the article's own date — carry the\nsource's date when migrating, or a decade of work looks like it happened\nthis afternoon. A date in the future schedules it: the public index filters\non the date, so it stays unseen until then."
+  },
+  {
+    "name": "WebsiteMenuItem",
+    "description": "One entry in the website's header or footer menu, pointing at a page, an\narticle, or an external address. Menus are ordered;\n`POST /api/v1/website-menu/reorder` moves entries. An import that carries\nmenus replaces them wholesale; one that does not leaves them untouched."
+  },
+  {
+    "name": "WebsitePage",
+    "description": "One page of the public website: a slug, SEO metadata, a status, and an\nordered list of section blocks drawn from the vocabulary in\n`GET /api/v1/website-schema`. Blocks are sanitized on save — anything the\nvocabulary does not recognise is dropped, so read the stored page back\nrather than assuming the payload survived. Prefer\n`PUT /api/v1/website-page/{slug}` for authoring; this CRUD surface is what\nthe builder UI uses."
   }
 ]

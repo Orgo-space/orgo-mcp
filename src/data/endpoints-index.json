@@ -400,6 +400,26 @@
     "deprecated": false
   },
   {
+    "operationId": "company_map_public",
+    "method": "GET",
+    "path": "/api/v1/companies-map-public",
+    "tag": "Company",
+    "summary": "Get company map clusters for the public map",
+    "description": "Anonymous version of /companies-map-clusters for the website company map block and the iframe embed. Requires the tenantSlug query parameter; accepts the same zoom and viewport bounds (north, south, east, west). Pins carry company identity only (uuid, name, logo): a lone pin carries its one company, and a grouped pin of up to 20 companies carries all of them so a visitor can open companies that share one point (usually their town centre). Larger groups carry none; zoom in until they split. Open a company with /companies-map-public-card. Answers 404 for an unknown slug or when the tenant compa…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "company_map_public_card",
+    "method": "GET",
+    "path": "/api/v1/companies-map-public-card",
+    "tag": "Company",
+    "summary": "Get one company for the public map popup",
+    "description": "Anonymous. Pass tenantSlug and uuid. Returns an ACTIVE company of that tenant with its public fields only (name, logo, description, website, place, country) and its representatives (PRIMARY_CONTACT, VOTING_REPRESENTATIVE and REPRESENTATIVE roles, active memberships; never the financial rep or plain members). Each representative keeps their own privacy: a hidden profile is omitted, a private name is abbreviated, a private photo is dropped; when the tenant privatizes profiles no representative is returned. Also returns the public email and phone the company chose to publish (null when not set).…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
     "operationId": "api_companies_uuid_delete",
     "method": "DELETE",
     "path": "/api/v1/companies/{uuid}",
@@ -7196,6 +7216,496 @@
     "tag": "WebhookSubscription",
     "summary": "Test a webhook subscription",
     "description": "Sends a test payload to the webhook URL and returns the delivery result including HTTP status code, response body, and timing. Useful for verifying the endpoint is reachable and correctly configured. Requires ADMIN_TENANT permission.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteArticleCategories",
+    "method": "GET",
+    "path": "/api/v1/website-article-categories",
+    "tag": "Website",
+    "summary": "List the article categories in use",
+    "description": "Every category label the tenant's articles carry, with how many articles carry each. Drafts included.\n\nA category is a free label on the article rather than a record of its own, so this is the only list of them there is - read it before setting one, or you will invent a second spelling of a category that already exists.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteArticleCategoryRename",
+    "method": "PATCH",
+    "path": "/api/v1/website-article-categories",
+    "tag": "Website",
+    "summary": "Rename a category everywhere",
+    "description": "Body: {\"from\": \"Field notes\", \"to\": \"Field work\"}.\n\nRenames the label in the list and on every article carrying it, in one write. To remove one, use DELETE - a half-renamed category is two categories.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteArticleCategoryCreate",
+    "method": "POST",
+    "path": "/api/v1/website-article-categories",
+    "tag": "Website",
+    "summary": "Add a category to the list",
+    "description": "Body: {\"name\": \"Field notes\"}.\n\nAdds a label with nothing filed under it yet, which is what lets the first article of a new category choose one. Duplicates differing only in case are refused - that is the whole reason the list is stored rather than derived from the articles.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteArticleCategoryDelete",
+    "method": "DELETE",
+    "path": "/api/v1/website-article-categories/{name}",
+    "tag": "Website",
+    "summary": "Remove a category",
+    "description": "Removes the label from the list and clears it from every article carrying it. The articles stay - it is a label being deleted, not the work filed under it - and the response reports how many were cleared.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteArticleUpsert",
+    "method": "PUT",
+    "path": "/api/v1/website-article/{slug}",
+    "tag": "Website",
+    "summary": "Create or replace one article by slug",
+    "description": "The same tool as PUT /api/v1/website-page/{slug}, for a news article. An article is a page with a date: the body is the same block list, through the same sanitizer, and everything the section vocabulary can express is available in one.\n\nIdempotent, and the block list is replaced entirely rather than merged. The editorial fields - title, excerpt, category, coverImage, publishedAt, seoTitle, seoDescription - are patched: a key you do not send keeps its stored value, an explicit null clears it. That is what lets the visual editor save a rearranged body without resending the metadata it does not…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteBuild",
+    "method": "GET",
+    "path": "/api/v1/website-build",
+    "tag": "Website",
+    "summary": "The status of the last static render",
+    "description": "Publishing queues a render of the site into files; it happens outside the request, so the publish call can only ever answer \"queued\". This is where you find out whether it finished, and when it did not, why.\n\nReturns the latest build and a short history. `status` is QUEUED, RUNNING, DONE or FAILED. Null before the site has ever been published.\n\nAlso returns what is live, page by page: `pages[].publishState` is LIVE (on the internet as written), STALE (edited since), NEVER_PUBLISHED, WITHDRAWING (a draft here, still being served until the next publish) or DRAFT. `pendingCount` is how many a pu…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDocuments",
+    "method": "GET",
+    "path": "/api/v1/website-documents",
+    "tag": "Website",
+    "summary": "List the documents the website hosts",
+    "description": "Documents stored by the website itself for a `files` section - the other source beside Drive shares. Newest first, at most 20.\n\nQuery: `search`, matched against the file name.\n\nReturns `{\"files\": [{\"file\", \"title\", \"fileType\", \"size\", \"url\"}]}`. Put `file` in the row, never `url` (the section rebuilds the address), and copy `title`, `fileType` and `size` alongside it.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDocumentsDelete",
+    "method": "DELETE",
+    "path": "/api/v1/website-documents/{file}",
+    "tag": "Website",
+    "summary": "Delete a document the website hosts",
+    "description": "Takes a hosted document off the CDN. `file` is the name a `files` row stores.\n\nRefused with 409 while any page still links it - the response names the pages. Remove the rows first, or pass `force=true` to delete anyway; the answer then lists the pages left pointing at a missing file in `stillLinkedFrom`.\n\nReturns `{\"deleted\", \"stillLinkedFrom\"}`. 404 for a name that is not one of this tenant's documents. Drive shares are not affected - revoke those in Drive.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDocumentsImport",
+    "method": "POST",
+    "path": "/api/v1/website-documents/import",
+    "tag": "Website",
+    "summary": "Import a document into the site by url",
+    "description": "Fetches a document - the statute, annual report or form a migrated site offered for download - stores it publicly on the website's CDN and returns the row a `files` section stores.\n\nBody: {\"url\": \"https://...\"}.\n\nSame guards as an image import: http and https only, no private or internal address anywhere in the redirect chain. At most 25 MB. The bytes are checked, not the name or the Content-Type: PDF, Word, Excel, PowerPoint (old and new), OpenDocument, RTF, EPUB, plain text and CSV are accepted; HTML, SVG, archives, images and executables are refused.\n\nReturns `{\"file\", \"title\", \"fileType\",…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDocumentsUpload",
+    "method": "POST",
+    "path": "/api/v1/website-documents/upload",
+    "tag": "Website",
+    "summary": "Publish an uploaded document",
+    "description": "Step two: checks the staged file the way an import does, publishes it and removes the staged copy.\n\nBody: {\"uploadKey\": \"<from upload-url>\", \"fileName\": \"Annual report 2025.pdf\"}. The name becomes the readable part of the stored name and the title; it never decides the format.\n\nReturns the same row as the import. Uploading identical bytes twice returns the first file.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDocumentsUploadUrl",
+    "method": "POST",
+    "path": "/api/v1/website-documents/upload-url",
+    "tag": "Website",
+    "summary": "Start a document upload",
+    "description": "Step one of uploading bytes you hold. The API cannot carry a 25 MB body, so the file goes straight to storage: POST it as multipart/form-data to `url` with every entry of `fields`, then a `Content-Type` field, then the file as `file`.\n\nReturns `{\"uploadKey\", \"url\", \"fields\", \"maxBytes\"}`. The key is private and valid for 15 minutes. Then call POST /api/v1/website-documents/upload.\n\nRequires ADMIN_TENANT and the website module. Rate limited per tenant.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteDriveFiles",
+    "method": "GET",
+    "path": "/api/v1/website-drive-files",
+    "tag": "Website",
+    "summary": "Find documents the site may offer for download",
+    "description": "The files a `files` section may list: documents this tenant has already shared publicly from Drive.\n\nA Drive row links at the file where it lives, with Drive's permissions and revocation. For a document that belongs to the website alone - above all the downloads of a site being migrated in - use /api/v1/website-documents instead and store `file` rather than `slug`.\n\nQuery: `search`, matched against the file's title. Omit it to browse; most tenants have few enough public files to read the list.\n\nReturns `{\"files\": [{\"slug\", \"title\", \"fileType\", \"size\", \"url\", \"thumbnailUrl\"}]}`. Put `slug` in…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteForms",
+    "method": "GET",
+    "path": "/api/v1/website-forms",
+    "tag": "Website",
+    "summary": "Find forms the site may embed",
+    "description": "The forms a `form` section may embed: this tenant's, in a state a visitor can actually fill in.\n\nThe page builder does not author forms, it points at ones the form builder already owns - a second question editor here would be a second copy of every membership application, out of step with the first a week later. So the block stores the form's `uuid` and the section fetches the questions when the page renders, which is what keeps a published page correct after somebody adds a question, and what makes closing a form close it everywhere at once.\n\nQuery: `search`, matched against the form's name.…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteGuide",
+    "method": "GET",
+    "path": "/api/v1/website-guide",
+    "tag": "Website",
+    "summary": "How to migrate a website into Orgo",
+    "description": "The whole workflow as one markdown document: what a SiteSpec looks like, the nine phases from crawling a source site to publishing, the mapping from common web patterns to Orgo sections, and the two points where you must stop and ask the person.\n\nRead this first when the task is \"move my website to Orgo\". Read GET /api/v1/website-schema alongside it - that one is the vocabulary, this one is the process.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteImport",
+    "method": "POST",
+    "path": "/api/v1/website-import",
+    "tag": "Website",
+    "summary": "Apply a whole site in one transaction",
+    "description": "Writes design, pages and both menus from a SiteSpec.\n\nBody: {\"mode\": \"dryRun\"|\"apply\", \"replace\": bool, \"spec\": SiteSpec}.\n\nmode=dryRun validates everything and writes nothing, returning the same report an apply would produce - always run it first and show the result to the person before applying. mode=apply takes a snapshot, then writes in one transaction: if any part of the spec is invalid, nothing changes.\n\nreplace=true deletes pages the spec does not mention. Menus are replaced wholesale whenever the spec carries them and left alone when it does not.\n\nBoth modes return the normalized spec…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteMediaImport",
+    "method": "POST",
+    "path": "/api/v1/website-media/import",
+    "tag": "Website",
+    "summary": "Import an image into the site by url",
+    "description": "Fetches an image and stores it, returning the bare filename that a block's image field expects. This is how a picture from another website gets into Orgo: blocks store filenames, never urls, so an external address can never be referenced directly.\n\nBody: {\"url\": \"https://...\"}.\n\nOnly http and https, only the standard ports, no credentials in the url, no private or internal addresses at any point in the redirect chain, at most 10 MB. The image is re-encoded to WebP, so an animated GIF is kept as its first frame and says so in the warnings.\n\nImporting the same url twice returns the existing fil…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteMediaUploadBase64",
+    "method": "POST",
+    "path": "/api/v1/website-media/upload-base64",
+    "tag": "Website",
+    "summary": "Store an image from base64 data",
+    "description": "The fallback for an image Orgo's servers cannot fetch themselves - one behind a login, or on a host that is not publicly reachable. Prefer POST /api/v1/website-media/import whenever the url works.\n\nBody: {\"data\": \"<base64 or data: url>\", \"reference\": \"<stable identifier, usually the source url>\"}.\n\nAt most 2 MB, since the payload rides in the request. The reference is what makes a re-run converge instead of duplicating the image.\n\nRequires ADMIN_TENANT and the website module. Rate limited per tenant.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteMenuReorder",
+    "method": "POST",
+    "path": "/api/v1/website-menu/reorder",
+    "tag": "Website",
+    "summary": "Reorder the header or footer menu",
+    "description": "Moves several entries at once. To change a single entry use PATCH /api/v1/website_menu_items/{uuid}.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websitePageUpsert",
+    "method": "PUT",
+    "path": "/api/v1/website-page/{slug}",
+    "tag": "Website",
+    "summary": "Create or replace one page by slug",
+    "description": "The tool for changing one page - a whole-site rewrite belongs in POST /api/v1/website-import.\n\nIdempotent: re-running converges rather than accumulating duplicates, and no lookup round-trip is needed because the slug addresses the page. The block list is replaced entirely, not merged, so send the whole page.\n\nThe response echoes the stored blocks, which may differ from what was sent: unknown fields are dropped and rich text is sanitized.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websitePublish",
+    "method": "POST",
+    "path": "/api/v1/website-publish",
+    "tag": "Website",
+    "summary": "Publish pages, and put the site live",
+    "description": "The one call that makes work visible to visitors, and the only one - an import sets page statuses but never the live switch, a page save leaves the status alone, and applying a template does not switch the site on.\n\nBody: {\"pages\": [\"about\", \"contact\"] | [\"all\"], \"only\": [\"about\"], \"goLive\": true, \"force\": true}. All four keys are optional: send pages alone to publish content without putting the site live, or goLive alone once the content is ready.\n\n`pages` changes a status - it moves drafts to published. `only` changes what this build renders: the pages named take their current content and e…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteRedirectsList",
+    "method": "GET",
+    "path": "/api/v1/website-redirects",
+    "tag": "Website",
+    "summary": "List the redirects",
+    "description": "Every old address the site still answers on, with its uuid, and `max` - the cap per site.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteRedirectsCreate",
+    "method": "POST",
+    "path": "/api/v1/website-redirects",
+    "tag": "Website",
+    "summary": "Add a redirect",
+    "description": "`from` is a path on this site; a full url is accepted and reduced to its path. `to` is a path here or a full http(s) address. `code` is 301 (permanent, the default, and what a migration wants) or 302 (temporary).\n\nRefused: a rule pointing at itself, a second rule for the same `from`, a chain that loops, and a target that is neither a path nor an http(s) url - a protocol-relative `//host` in particular, which would turn the site into an open redirect.\n\nTo carry a whole migration across at once use POST /api/v1/website-import with a `redirects` list instead; that replaces the set wholesale.\n\nRe…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteRedirectsDelete",
+    "method": "DELETE",
+    "path": "/api/v1/website-redirects/{uuid}",
+    "tag": "Website",
+    "summary": "Remove a redirect",
+    "description": "The old address stops being honoured; visitors arriving on it get a 404.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteRedirectsUpdate",
+    "method": "PATCH",
+    "path": "/api/v1/website-redirects/{uuid}",
+    "tag": "Website",
+    "summary": "Change a redirect",
+    "description": "Merge-patch: send only `from`, `to` or `code`. The same rules as creating one apply, checked against the rest of the table.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteRestore",
+    "method": "POST",
+    "path": "/api/v1/website-restore/{uuid}",
+    "tag": "Website",
+    "summary": "Put the site back to a snapshot",
+    "description": "Destructive: pages created since the snapshot are deleted, and the design and both menus go back to what they were.\n\nA snapshot of the current state is taken first, so restoring the wrong one loses nothing.\n\nRequires ADMIN_TENANT and the website module. Rate limited per tenant.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteSchema",
+    "method": "GET",
+    "path": "/api/v1/website-schema",
+    "tag": "Website",
+    "summary": "Get the website block vocabulary",
+    "description": "Everything needed to compose a valid page in one call: every block type with the fields it accepts, what each type is for, one valid example of it, the shared layout object, every allowed enum value, and which platform-backed sections this tenant may use.\n\nRead this before writing any page. It is generated from the sanitizer itself, so it cannot drift from what a write will actually accept.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteSettingsShow",
+    "method": "GET",
+    "path": "/api/v1/website-settings",
+    "tag": "Website",
+    "summary": "Get the site design settings",
+    "description": "Theme, colours, typography, corner radius, header and footer options, default SEO, custom code, the site's own hostname and its storage region.\n\nAlso returns websiteHostDefault (the <slug>.orgo.cloud address every site has), websiteRegionDefault (what the organisation's country implies) and websiteRegions (what may be chosen).\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteSettingsUpdate",
+    "method": "PATCH",
+    "path": "/api/v1/website-settings",
+    "tag": "Website",
+    "summary": "Update the site design settings",
+    "description": "Merge-patch: send only the keys to change. Colours are hex values, and a null colour means \"inherit the theme preset\" rather than \"no colour\".\n\nThis is also where a site is published or unpublished, through isActive.\n\nFour keys sit at the top level of the payload rather than inside the design object, because they are not design:\n\n- `social` — the organisation's links (facebook, instagram, linkedin, youtube, tiktok, x). Stored on the tenant, shared with the tenant form, so changing one here changes it everywhere.\n- `websiteHost` — the domain the organisation owns. A hostname, no scheme and no…",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteSnapshot",
+    "method": "GET",
+    "path": "/api/v1/website-snapshot",
+    "tag": "Website",
+    "summary": "Export the whole site as a SiteSpec",
+    "description": "The tenant's entire website as one document: design settings, every page with its blocks, and both menus - drafts and inactive menu entries included.\n\nThis is the same shape POST /api/v1/website-import accepts, so it doubles as a backup, a diff baseline, and the thing to read before deciding what to change. Applying it back unchanged is a no-op.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteSnapshots",
+    "method": "GET",
+    "path": "/api/v1/website-snapshots",
+    "tag": "Website",
+    "summary": "List the site snapshots available to restore",
+    "description": "One is taken automatically before every import and before every restore, newest first, ten kept per tenant.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteTemplatesList",
+    "method": "GET",
+    "path": "/api/v1/website-templates",
+    "tag": "Website",
+    "summary": "List the starter site templates",
+    "description": "Each entry describes what applying it would create.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteTemplatesApply",
+    "method": "POST",
+    "path": "/api/v1/website-templates/{key}/apply",
+    "tag": "Website",
+    "summary": "Apply a starter site template",
+    "description": "Creates the template's pages and menus and sets its theme.\n\nWith replace=true this first deletes every existing page and menu entry, so it is destructive; with replace=false it aborts on the first slug collision, which is the safer default.\n\nFor migrating an existing website, prefer POST /api/v1/website-import - a template is a starting point, not an import.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "websiteTemplatesPreview",
+    "method": "GET",
+    "path": "/api/v1/website-templates/{key}/preview",
+    "tag": "Website",
+    "summary": "Get a template homepage",
+    "description": "The template's design settings and the blocks of its homepage, for showing what applying it would look like. Reads nothing and writes nothing.\n\nRequires ADMIN_TENANT and the website module.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_articles_get_collection",
+    "method": "GET",
+    "path": "/api/v1/website_articles",
+    "tag": "WebsiteArticle",
+    "summary": "List website articles",
+    "description": "Returns the articles of the current tenant's website, drafts included, newest first. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_articles_post",
+    "method": "POST",
+    "path": "/api/v1/website_articles",
+    "tag": "WebsiteArticle",
+    "summary": "Create a website article",
+    "description": "Creates an article. The tenant is taken from the authenticated user, the slug is normalised and checked for collisions, and the block list is sanitized before storage. Publishing without a date sets it to now, since the public index filters on one. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_articles_uuid_delete",
+    "method": "DELETE",
+    "path": "/api/v1/website_articles/{uuid}",
+    "tag": "WebsiteArticle",
+    "summary": "Delete a website article",
+    "description": "Deletes an article of the current tenant's website. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_articles_uuid_get",
+    "method": "GET",
+    "path": "/api/v1/website_articles/{uuid}",
+    "tag": "WebsiteArticle",
+    "summary": "Get a website article",
+    "description": "Retrieves one article of the current tenant's website by uuid, including its block list. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_articles_uuid_patch",
+    "method": "PATCH",
+    "path": "/api/v1/website_articles/{uuid}",
+    "tag": "WebsiteArticle",
+    "summary": "Update a website article",
+    "description": "Updates an article. Re-runs slug normalisation and block sanitization on every write. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_menu_items_get_collection",
+    "method": "GET",
+    "path": "/api/v1/website_menu_items",
+    "tag": "WebsiteMenuItem",
+    "summary": "List website menu items",
+    "description": "Returns every header and footer menu item of the current tenant's website, inactive ones included, in render order. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_menu_items_post",
+    "method": "POST",
+    "path": "/api/v1/website_menu_items",
+    "tag": "WebsiteMenuItem",
+    "summary": "Create a website menu item",
+    "description": "Adds an entry to the header or footer menu. Validates the link target, refuses a second level of nesting, and rejects a linked page belonging to another organisation. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_menu_items_uuid_delete",
+    "method": "DELETE",
+    "path": "/api/v1/website_menu_items/{uuid}",
+    "tag": "WebsiteMenuItem",
+    "summary": "Delete a website menu item",
+    "description": "Deletes a menu entry. Its submenu entries cascade with it. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_menu_items_uuid_get",
+    "method": "GET",
+    "path": "/api/v1/website_menu_items/{uuid}",
+    "tag": "WebsiteMenuItem",
+    "summary": "Get a website menu item",
+    "description": "Retrieves one menu item of the current tenant's website by uuid. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_menu_items_uuid_patch",
+    "method": "PATCH",
+    "path": "/api/v1/website_menu_items/{uuid}",
+    "tag": "WebsiteMenuItem",
+    "summary": "Update a website menu item",
+    "description": "Updates a menu entry. Re-validates the link target and the nesting depth. Use /website-menu/reorder to move several items at once. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_pages_get_collection",
+    "method": "GET",
+    "path": "/api/v1/website_pages",
+    "tag": "WebsitePage",
+    "summary": "List website pages",
+    "description": "Returns the pages of the current tenant's website, drafts included, ordered by position. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_pages_post",
+    "method": "POST",
+    "path": "/api/v1/website_pages",
+    "tag": "WebsitePage",
+    "summary": "Create a website page",
+    "description": "Creates a page on the current tenant's website. The tenant is taken from the authenticated user, the slug is normalised and checked for collisions, and the block list is sanitized before storage. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_pages_uuid_delete",
+    "method": "DELETE",
+    "path": "/api/v1/website_pages/{uuid}",
+    "tag": "WebsitePage",
+    "summary": "Delete a website page",
+    "description": "Deletes a page of the current tenant's website. Menu items pointing at it keep their row and stop rendering. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_pages_uuid_get",
+    "method": "GET",
+    "path": "/api/v1/website_pages/{uuid}",
+    "tag": "WebsitePage",
+    "summary": "Get a website page",
+    "description": "Retrieves one page of the current tenant's website by uuid, including its block list. Requires ADMIN_TENANT.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
+    "operationId": "api_website_pages_uuid_patch",
+    "method": "PATCH",
+    "path": "/api/v1/website_pages/{uuid}",
+    "tag": "WebsitePage",
+    "summary": "Update a website page",
+    "description": "Updates a page of the current tenant's website. Re-runs slug normalisation and block sanitization on every write. Requires ADMIN_TENANT.",
+    "hasBody": true,
+    "deprecated": false
+  },
+  {
+    "operationId": "website_page_duplicate",
+    "method": "POST",
+    "path": "/api/v1/website_pages/{uuid}/duplicate",
+    "tag": "WebsitePage",
+    "summary": "Duplicate a website page",
+    "description": "Creates a copy of the page - same sections, SEO fields and sharing image - at the first free \"-copy\" address. The copy is always a draft and is never the homepage, so duplicating cannot put anything on the internet; publishing it is a separate call. Requires ADMIN_TENANT.",
     "hasBody": true,
     "deprecated": false
   },

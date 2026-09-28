@@ -1,5 +1,5 @@
 /**
- * Discovery tools: how the model navigates 458 endpoints without bloat.
+ * Discovery tools: how the model navigates hundreds of endpoints without bloat.
  *
  *   list_endpoints      → filter + paginate the endpoint index
  *   describe_endpoint   → full spec for one operation (params, body, responses, samples)
@@ -112,7 +112,7 @@ export function registerDiscoveryTools(server: McpServer, index: OpenApiIndex) {
     {
       title: 'List Orgo resource families (tags)',
       description:
-        'Return all 118 resource families (User, Event, Contact, Payment, etc.) with a multi-sentence ' +
+        `Return all ${index.tags.length} resource families (User, Event, Contact, Payment, etc.) with a multi-sentence ` +
         'description explaining what each entity is, its lifecycle (where applicable), and how it relates ' +
         'to other entities. Use this to orient yourself before drilling into endpoints.',
       inputSchema: {},

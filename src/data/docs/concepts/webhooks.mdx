@@ -97,8 +97,80 @@ The OpenAPI spec declares a `Webhook.<EventName>` schema for each event type (e.
 | `X-Webhook-Event` | The event type (e.g. `user.created`) |
 | `X-Webhook-Delivery` | Unique delivery ID — log this; you can look it up in the dashboard |
 | `X-Webhook-Timestamp` | Unix timestamp of when this delivery was sent (use for replay-attack defense) |
+| `X-Webhook-Signature` | HMAC-SHA256 over the delivery, keyed with the subscription secret. Sent only when the subscription has a secret (see below) |
 | `Content-Type` | `application/json` |
 | `User-Agent` | `OrgoWebhook/1.0` |
+
+---
+
+## Authenticating the sender
+
+Set a `secret` on the subscription and every delivery carries `X-Webhook-Signature` in this shape:
+
+```
+X-Webhook-Signature: t=1754413200,v1=3f9c0e2b…
+```
+
+| Part | Meaning |
+|---|---|
+| `t` | Unix seconds at signing time. Same value as `X-Webhook-Timestamp` |
+| `v1` | `HMAC-SHA256(secret, "<t>." + raw request body)`, hex encoded, lowercase, 64 characters |
+
+The timestamp is inside the signed string, so it cannot be edited without invalidating `v1`. That is what lets you reject a captured delivery replayed later.
+
+Verify against the **raw body**. A body that has been parsed and re-serialized is a different byte string and will not match.
+
+```javascript
+const crypto = require("crypto");
+
+function verify(rawBody, header, secret, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(
+    header.split(",").map((p) => p.split("=", 2))
+  );
+  if (!parts.t || !parts.v1) return false;
+
+  if (Math.abs(Date.now() / 1000 - Number(parts.t)) > toleranceSeconds) {
+    return false; // too old, or too far in the future
+  }
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${parts.t}.${rawBody}`)
+    .digest("hex");
+
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(parts.v1, "utf8");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+```
+
+```python
+import hashlib, hmac, time
+
+def verify(raw_body: bytes, header: str, secret: str, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    if "t" not in parts or "v1" not in parts:
+        return False
+
+    if abs(time.time() - int(parts["t"])) > tolerance:
+        return False
+
+    expected = hmac.new(
+        secret.encode(),
+        parts["t"].encode() + b"." + raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, parts["v1"])
+```
+
+Respond `401` and log the delivery ID when verification fails. Orgo treats that as a failed delivery and retries it, which is the behavior you want if the failure is your own misconfiguration.
+
+Each retry is signed at the moment it is sent, so the same delivery ID can arrive with different `t` and `v1` values. Deduplicate on the payload `id` or `X-Webhook-Delivery`, never on the signature.
+
+<Warning>
+This format shipped in August 2026 and replaced a short non-keyed checksum. There is no compatibility header: a receiver comparing the old value must move to the recipe above.
+</Warning>
 
 ---
 

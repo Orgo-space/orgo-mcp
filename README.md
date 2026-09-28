@@ -2,7 +2,7 @@
 
 Model Context Protocol server for the [Orgo API](https://orgo.space/docs/api-reference). Lets LLM agents — Claude Desktop, Claude.ai, Cursor, Gemini, OpenAI Responses, custom agents — manage Orgo organizations: members, events, payments, contracts, communications, governance, learning.
 
-Built on the enriched Orgo OpenAPI spec: **458 paths**, **743 operations**, **118 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package.
+Built on the enriched Orgo OpenAPI spec: **495 paths**, **794 operations**, **122 resource families**, **18 webhook events**, hand-curated tag descriptions and code samples shipped in the package.
 
 ---
 
@@ -165,9 +165,9 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 | Tool | Purpose |
 |---|---|
-| `list_resources` | List all 118 resource families (User, Event, Contact, …) with descriptions. |
+| `list_resources` | List all 122 resource families (User, Event, Contact, …) with descriptions. |
 | `describe_resource` | Tag description + every endpoint for one resource family. |
-| `list_endpoints` | Search the 743-operation catalog by tag / method / free-text. |
+| `list_endpoints` | Search the 794-operation catalog by tag / method / free-text. |
 | `describe_endpoint` | Full OpenAPI spec for one operation: parameters, body, responses, code samples. |
 | `describe_schema` | JSON schema for a model (e.g. `User-user_read`). |
 | `list_webhooks` | All 18 webhook events. |
@@ -177,7 +177,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 | Tool | Purpose |
 |---|---|
-| `call_endpoint` | Workhorse — invokes any of the 458 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
+| `call_endpoint` | Workhorse — invokes any of the 495 paths × methods. Validates against the catalog so hallucinated paths fail loud. |
 
 ### Auth helpers (interactive flows)
 
@@ -197,7 +197,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 ```
 orgo://docs/overview                            ← API overview (info.md)
-orgo://docs/tags                                ← Catalog of all 118 resource families
+orgo://docs/tags                                ← Catalog of all 122 resource families
 orgo://docs/webhooks                            ← Webhook event catalog
 orgo://docs/concepts/authentication             ← 5 auth methods explained
 orgo://docs/concepts/tenancy                    ← Host-header tenant resolution
