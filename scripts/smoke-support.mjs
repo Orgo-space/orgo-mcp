@@ -103,6 +103,13 @@ async function main() {
 
   const withSession = { ...MCP_HEADERS, 'mcp-session-id': sessionId };
 
+  const stale = await fetch(`${BASE}/mcp`, {
+    method: 'POST',
+    headers: { ...MCP_HEADERS, 'mcp-session-id': '00000000-0000-4000-8000-000000000000' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }),
+  });
+  check('unknown session gets 404, so Fin re-initializes after a restart', stale.status === 404, `status ${stale.status}`);
+
   await fetch(`${BASE}/mcp`, {
     method: 'POST',
     headers: withSession,

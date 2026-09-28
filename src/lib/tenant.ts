@@ -11,7 +11,9 @@
  * Two modes:
  *   - Single-tenant override: `ORGO_TENANT_HOST` is set. Every request maps
  *     to that tenant regardless of incoming Host. Useful for dedicated
- *     deployments on non-standard hostnames.
+ *     deployments on non-standard hostnames. The public URL still follows a
+ *     routable Host (see resolveTenant), so each subdomain stays its own
+ *     OAuth protected resource.
  *   - Multi-tenant (default): tenant is derived per-request via a regex
  *     against the incoming Host. Default pattern strips a leading `mcp.`.
  *
@@ -19,7 +21,7 @@
  *   ORGO_TENANT_HOST                — single-tenant override
  *   ORGO_TENANT_FROM_HOST_PATTERN   — regex with one capture group (default ^mcp\.(.+)$)
  *   ORGO_ALLOWED_TENANT_SUFFIXES    — comma-separated suffix allowlist (default .orgo.space)
- *   ORGO_PUBLIC_BASE_URL            — single-tenant override for the OAuth metadata `resource`/`issuer`
+ *   ORGO_PUBLIC_BASE_URL            — single-tenant public URL for hosts that are not routable (the apex)
  */
 
 export interface TenantContext {
@@ -102,21 +104,37 @@ export function resolveTenant(
   forwardedProto: string | undefined,
   options: TenantResolverOptions,
 ): TenantResolveResult | TenantResolveError {
-  // Single-tenant override: ignore Host entirely. Useful when the MCP server's
-  // own hostname doesn't follow the `mcp.{tenant}` convention.
+  const routed = routeHost(hostHeader, forwardedProto, options);
+
+  // Single-tenant override: the tenant ignores Host entirely. The public URL
+  // does not. RFC 9728 has the client check that the metadata's `resource`
+  // matches the URL it connected to, and Claude Code enforces it, so a
+  // subdomain that advertised the apex was unusable there. A routable Host
+  // (pattern + suffix allowlist) is its own resource; anything else, the apex
+  // included, gets the configured URL, so an arbitrary Host is never echoed.
   if (options.singleTenantHost) {
     return {
       ok: true,
       context: {
         tenantHost: options.singleTenantHost,
-        publicBaseUrl:
-          options.singleTenantPublicBaseUrl ??
-          buildPublicBaseUrl(hostHeader, forwardedProto) ??
-          `https://${options.singleTenantHost}`,
+        publicBaseUrl: routed.ok
+          ? routed.context.publicBaseUrl
+          : (options.singleTenantPublicBaseUrl ??
+            buildPublicBaseUrl(hostHeader, forwardedProto) ??
+            `https://${options.singleTenantHost}`),
       },
     };
   }
 
+  return routed;
+}
+
+/** Multi-tenant routing: Host → tenant, behind the SSRF suffix allowlist. */
+function routeHost(
+  hostHeader: string | undefined,
+  forwardedProto: string | undefined,
+  options: TenantResolverOptions,
+): TenantResolveResult | TenantResolveError {
   if (!hostHeader) {
     return { ok: false, status: 400, error: 'missing_host', detail: 'Request has no Host header.' };
   }

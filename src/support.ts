@@ -177,6 +177,12 @@ app.post('/mcp', requireBearer, async (req, res) => {
 
     await buildSupportServer().connect(transport);
   } else if (!transport) {
+    // Unknown session (a restart forgets them all): 404 makes the client
+    // re-initialize on its own, per the Streamable HTTP spec.
+    if (sessionId) {
+      res.status(404).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
+      return;
+    }
     res.status(400).json({
       jsonrpc: '2.0',
       error: { code: -32000, message: 'No session and no initialize request' },

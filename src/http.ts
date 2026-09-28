@@ -271,6 +271,19 @@ app.post('/mcp', requireBearerAndTenant, async (req, res) => {
 
     await server.connect(transport);
   } else if (!transport) {
+    // Sessions are in memory, so a deploy or restart forgets every one of them.
+    // The spec answers an unknown session with 404, which is the client's cue
+    // to re-initialize by itself; a 400 left it failing until someone clicked
+    // Reconnect. No session header at all is still a malformed request.
+    if (sessionId) {
+      log.info('session_unknown', { sessionId });
+      res.status(404).json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'Session not found' },
+        id: null,
+      });
+      return;
+    }
     res.status(400).json({
       jsonrpc: '2.0',
       error: { code: -32000, message: 'No session and no initialize request' },

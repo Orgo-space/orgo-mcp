@@ -193,6 +193,14 @@ async function runChecks() {
   console.log('\nCheck 6: reuse on same session with original bearer still works');
   const r6 = await fetchMcp(sessionId, REAL_TOKEN, { id: 5, method: 'tools/list' });
   assert('6a. still returns tools', r6.result?.tools?.length === 14);
+
+  // Sessions live in memory, so every deploy forgets them. The spec (Streamable
+  // HTTP, session management) says an unknown session id gets 404, which is the
+  // client's cue to re-initialize on its own. A 400 strands it until a human
+  // reconnects.
+  console.log('\nCheck 7: unknown session id → 404 so the client re-initializes');
+  const r7 = await fetchMcpRaw('00000000-0000-4000-8000-000000000000', REAL_TOKEN, { id: 6, method: 'tools/list' });
+  assert('7a. 404 status', r7.status === 404, `got ${r7.status}`);
 }
 
 // ─── 4. JSON-RPC helpers ────────────────────────────────────────────────────
