@@ -16,6 +16,7 @@ import { registerWebsiteTools } from './tools/website.js';
 import { registerDocResources } from './resources/docs.js';
 import { registerWebsiteResources } from './resources/website.js';
 import { registerPrompts } from './prompts/index.js';
+import { VERSION } from './lib/version.js';
 
 export interface BuildOptions {
   config: OrgoConfig;
@@ -30,7 +31,7 @@ export function buildServer({ config, client }: BuildOptions): McpServer {
   const server = new McpServer(
     {
       name: 'orgo-mcp',
-      version: '0.1.0',
+      version: VERSION,
     },
     {
       capabilities: {

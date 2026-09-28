@@ -39,6 +39,7 @@ import { loadTenantResolverOptions, resolveTenant, type TenantContext } from './
 import { InMemorySessionStore, type SessionStore } from './lib/sessions.js';
 import { Metrics } from './lib/metrics.js';
 import { createLogger } from './lib/logger.js';
+import { VERSION } from './lib/version.js';
 
 declare module 'express-serve-static-core' {
   // eslint-disable-next-line @typescript-eslint/no-empty-interface
@@ -127,7 +128,7 @@ app.get('/', (req, res) => {
   const ctx = resolveTenantOr400(req, res, { silent: true });
   res.json({
     name: 'orgo-mcp',
-    version: '0.1.0',
+    version: VERSION,
     description: 'Hosted Model Context Protocol server for the Orgo API.',
     tenant: ctx?.tenantHost ?? null,
     publicBaseUrl: ctx?.publicBaseUrl ?? null,

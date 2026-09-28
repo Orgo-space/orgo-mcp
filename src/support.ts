@@ -30,6 +30,7 @@ import { FactsIndex, loadFacts } from './lib/facts-index.js';
 import { registerSupportTools } from './tools/support.js';
 import { createLogger } from './lib/logger.js';
 import { Counter, Gauge } from './lib/metrics.js';
+import { VERSION } from './lib/version.js';
 
 const log = createLogger('orgo-support-mcp');
 
@@ -124,7 +125,7 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 
 function buildSupportServer(): McpServer {
   const server = new McpServer(
-    { name: 'orgo-support-mcp', version: '0.1.0' },
+    { name: 'orgo-support-mcp', version: VERSION },
     {
       capabilities: { tools: {} },
       instructions:
