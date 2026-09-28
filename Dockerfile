@@ -69,3 +69,77 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/http.js"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Support MCP — the public face of the support agent (dist/support.js).
+#
+#   docker build --target support -t orgo-support-mcp .
+#
+# Two things make this a separate target rather than a CMD override on the image
+# above:
+#
+#   1. It must not contain the Orgo API client. `check-support-isolation.mjs`
+#      runs inside the build, so an import that reconnects the data path fails
+#      the image rather than shipping. Enforcement belongs where it cannot be
+#      skipped, not in a CI step someone can rerun with --no-verify.
+#
+#   2. It needs no api-docs tree and no OpenAPI bundle, so it skips build:data
+#      entirely and builds in a fraction of the time.
+#
+# The image carries no facts, so it is safe to publish. The index is mounted at
+# runtime over FACTS_PATH (the production box reads it from SSM); without a
+# mount the index is empty, which is a valid state that escalates every question.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── support builder ──────────────────────────────────────────────────────────
+FROM node:${NODE_VERSION} AS support-builder
+
+WORKDIR /build
+
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+
+# tsc only. No build:data, no api-docs dependency.
+RUN npx tsc
+
+# The isolation guard. Fails the build if dist/support.js can reach the Orgo API,
+# an OAuth validator, or tenant resolution — directly or transitively.
+RUN node scripts/check-support-isolation.mjs
+
+# ── support runtime ──────────────────────────────────────────────────────────
+FROM node:${NODE_VERSION} AS support
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+
+COPY --from=support-builder /build/dist ./dist
+COPY LICENSE ./
+
+# Stamped by CI so /healthz and every log line report which snapshot is live.
+ARG SOURCE_SHA=unknown
+ENV SOURCE_SHA=${SOURCE_SHA}
+
+USER node
+
+ENV NODE_ENV=production \
+    PORT=8080 \
+    HOST=0.0.0.0 \
+    FACTS_PATH=/app/facts.serve.json
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "dist/support.js"]

@@ -15,6 +15,12 @@
   "scripts": {
     "build": "npm run build:data && tsc && npm run build:copy-data && npm run build:chmod",
     "build:data": "node --import tsx scripts/build-data.ts",
+    "build:facts": "node --import tsx scripts/build-facts.ts",
+    "build:support": "tsc && node scripts/check-support-isolation.mjs",
+    "check:support-isolation": "node scripts/check-support-isolation.mjs",
+    "start:support": "node dist/support.js",
+    "smoke:support": "node scripts/smoke-support.mjs",
+    "test": "node --import tsx --test test/*.test.ts",
     "build:copy-data": "node -e \"const{cpSync,rmSync}=require('node:fs');rmSync('dist/data',{recursive:true,force:true});cpSync('src/data','dist/data',{recursive:true});console.log('[build] copied src/data -> dist/data');\"",
     "build:chmod": "node -e \"const{chmodSync}=require('node:fs');['dist/index.js','dist/http.js'].forEach(f=>chmodSync(f,0o755));console.log('[build] chmod +x bins');\"",
     "build:watch": "tsc --watch",

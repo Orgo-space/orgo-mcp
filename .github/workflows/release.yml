@@ -1,4 +1,8 @@
-# Release: on tag push (vX.Y.Z), build the Docker image and publish to GHCR.
+# Release: on tag push (vX.Y.Z), build both Docker images and publish to GHCR:
+#   - orgo-mcp          the hosted API MCP (dist/http.js)
+#   - orgo-support-mcp  the support MCP Fin connects to (dist/support.js). It
+#                       carries no facts; the index is mounted at runtime, which
+#                       is what makes publishing it safe.
 #
 # Security discipline applied:
 #   - Workflow triggers only on tag push (not pull_request_target).
@@ -104,4 +108,70 @@ jobs:
           echo "::error::container did not become healthy in 10s"
           docker logs mcp-smoke || true
           docker stop mcp-smoke || true
+          exit 1
+
+  publish-support:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/orgo-support-mcp
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
+
+      # The isolation guard runs inside this build (Dockerfile support-builder),
+      # so an image that can reach the Orgo API cannot be produced at all.
+      - name: Build + push (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        with:
+          context: .
+          file: Dockerfile
+          target: support
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SOURCE_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=support
+          cache-to: type=gha,mode=max,scope=support
+          provenance: true
+          sbom: true
+
+      # Refuses to start without a bearer, so the smoke passes a throwaway one.
+      # No facts are mounted: an empty index must still come up healthy.
+      - name: Smoke-run the published image
+        env:
+          IMAGE_REF: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+        run: |
+          docker run --rm -d --name support-smoke -p 8080:8080 -e SUPPORT_BEARER=smoke "$IMAGE_REF"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if body=$(curl -fsS http://127.0.0.1:8080/healthz 2>/dev/null); then
+              echo "healthz OK: $body"
+              docker stop support-smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::container did not become healthy in 10s"
+          docker logs support-smoke || true
+          docker stop support-smoke || true
           exit 1

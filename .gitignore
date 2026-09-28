@@ -4,3 +4,7 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Support MCP fact index. Built from reviewed sources that live outside this
+# public repository, and served only at runtime. Never commit it.
+facts.serve.json

@@ -62,3 +62,14 @@ jobs:
 
       - name: Smoke test (hosted HTTP MCP + mock Orgo OAuth)
         run: node scripts/smoke-http.mjs
+
+      - name: Unit tests
+        run: npm test
+
+      # The support server is reachable from a public chat conversation; this
+      # fails the build if dist/support.js can reach the Orgo API client.
+      - name: Support isolation guard
+        run: npm run check:support-isolation
+
+      - name: Smoke test (support MCP)
+        run: npm run smoke:support

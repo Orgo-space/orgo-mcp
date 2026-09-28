@@ -18,3 +18,8 @@ README.md.bak
 
 # api-docs/ IS NOT ignored — the build stage needs it. Vendor it into the
 # build context before `docker build`, or use a CI step that fetches it.
+
+# Support MCP facts are private and mounted at runtime. Keep them out of every
+# build context so no image, public or not, can carry them.
+facts.serve.json
+support-facts

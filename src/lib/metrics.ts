@@ -14,9 +14,9 @@
  * vendored library.
  */
 
-type Labels = Record<string, string>;
+export type Labels = Record<string, string>;
 
-class Counter {
+export class Counter {
   private data = new Map<string, number>();
   constructor(public readonly name: string, public readonly help: string) {}
 
@@ -34,7 +34,7 @@ class Counter {
   }
 }
 
-class Gauge {
+export class Gauge {
   private value = 0;
   constructor(public readonly name: string, public readonly help: string) {}
 
@@ -47,7 +47,7 @@ class Gauge {
   }
 }
 
-class Summary {
+export class Summary {
   private count = new Map<string, number>();
   private sum = new Map<string, number>();
   constructor(public readonly name: string, public readonly help: string) {}
