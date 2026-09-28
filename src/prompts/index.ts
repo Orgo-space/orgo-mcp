@@ -89,6 +89,9 @@ export function registerPrompts(server: McpServer) {
               `Start by calling the \`website_guide\` tool with includeSchema: true. It returns the workflow and the ` +
               `block vocabulary from this tenant, and it names the per-platform shortcuts for getting the content out ` +
               `of the source cleanly — do not start crawling before you have read it.\n\n` +
+              `Bring pictures in with POST /api/v1/website-media/import and downloadable documents (PDFs, Office ` +
+              `files, CSVs) with POST /api/v1/website-documents/import, both by url — blocks store the returned ` +
+              `names, never urls.\n\n` +
               `Then follow it: show me the page list and ask which pages to migrate, write the SiteSpec to ` +
               `./orgo-migration/sitespec.json, run the import in dryRun mode and show me what would land, and stop. ` +
               `Do not apply without my go-ahead, and do not publish at all until I ask for it.`,
@@ -120,7 +123,8 @@ export function registerPrompts(server: McpServer) {
               `returns, using each type's intent to choose. Read GET /api/v1/website-settings so the page matches the ` +
               `site's design, and GET /api/v1/website-snapshot to see what the site already says, so this page does not ` +
               `repeat or contradict it. Every image goes through POST /api/v1/website-media/import first — blocks store ` +
-              `filenames, never urls. Save with PUT /api/v1/website-page/{slug} and show me the result; ` +
+              `filenames, never urls. A document to download goes through POST /api/v1/website-documents/import (by url) ` +
+              `and its returned \`file\` goes in a \`files\` section row. Save with PUT /api/v1/website-page/{slug} and show me the result; ` +
               `publishing is a separate call and my decision.`,
           },
         },
