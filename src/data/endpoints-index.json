@@ -530,12 +530,22 @@
     "deprecated": false
   },
   {
+    "operationId": "company_membership_quote",
+    "method": "GET",
+    "path": "/api/v1/companies/{uuid}/membership-quote",
+    "tag": "Company",
+    "summary": "Quote a company membership tier",
+    "description": "Returns what the company would actually be charged for a tier right now: the tier list price, the amount after proration, the period it buys and how many of the cycle's months that is. On a calendar-anchored tenant a mid-cycle payment buys only the remainder of the cycle, so the list price is not the charge. Pass ?priceId= to quote a specific tier, otherwise the company's current tier is used. \"processingFee\" is what covering the Stripe processing fee would add to this charge: the estimate on the whole charge (the prorated net amount plus VAT) at the domestic card rate of the organisation's S…",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
     "operationId": "company_payment_checkout",
     "method": "GET",
     "path": "/api/v1/companies/{uuid}/payment-checkout",
     "tag": "Company",
     "summary": "Get company payment checkout",
-    "description": "Creates a Stripe checkout session for the company membership fee. The company must have a membership plan selected. Returns a checkout session URL for redirect. Requires COMPANY_MANAGE_PAYMENTS permission or tenant admin role.",
+    "description": "Creates a Stripe checkout session for the company membership fee. The company must have a membership plan selected. Returns a checkout session URL for redirect. With coverProcessingFee=1 the payer covers the Stripe processing fee: it is added as its own untaxed \"Processing fee\" line, computed server-side on the whole charge (see the membership quote's processingFee), recorded on the resulting payment, and kept out of VAT and the membership invoice. Requires COMPANY_MANAGE_PAYMENTS permission or tenant admin role.",
     "hasBody": false,
     "deprecated": false
   },
