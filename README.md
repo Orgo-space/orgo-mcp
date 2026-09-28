@@ -174,7 +174,7 @@ This keeps the OAuth bearer tokens tenant-scoped automatically and avoids cross-
 
 ## Tools exposed
 
-13 tools across discovery, invocation, the website builder, and auth helpers.
+14 tools across discovery, invocation, the website builder, and auth helpers.
 
 ### Discovery (use these first)
 

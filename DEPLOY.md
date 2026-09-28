@@ -137,7 +137,7 @@ curl -i "https://evil.mcp.orgo.space/.well-known/oauth-protected-resource" -H "h
 # expect: 400 forbidden_tenant
 # (the TLS handshake uses a real tenant host; the forged Host header is what the app rejects)
 
-# 5. Authed initialize → tools/list returns 13 tools
+# 5. Authed initialize → tools/list returns 14 tools
 TOKEN=<real OAuth bearer for tenant $TENANT, obtained out-of-band>
 SESSION=$(curl -fsSi -X POST "https://$TENANT.mcp.orgo.space/mcp" \
   -H "authorization: Bearer $TOKEN" \
