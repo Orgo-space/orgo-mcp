@@ -141486,16 +141486,6 @@
                         "isClosed": true
                       },
                       "priority": 42,
-                      "assignee": {
-                        "@context": "string",
-                        "@id": "string",
-                        "@type": "string",
-                        "id": 42,
-                        "firstName": "James",
-                        "lastName": "Patterson",
-                        "fullName": "James Patterson",
-                        "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                      },
                       "createdBy": {
                         "@context": "string",
                         "@id": "string",
@@ -141587,13 +141577,6 @@
                       "isClosed": true
                     },
                     "priority": 42,
-                    "assignee": {
-                      "id": 42,
-                      "firstName": "James",
-                      "lastName": "Patterson",
-                      "fullName": "James Patterson",
-                      "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                    },
                     "createdBy": {
                       "id": 42,
                       "firstName": "James",
@@ -141687,13 +141670,6 @@
                       "isClosed": true
                     },
                     "priority": 42,
-                    "assignee": {
-                      "id": 42,
-                      "firstName": "James",
-                      "lastName": "Patterson",
-                      "fullName": "James Patterson",
-                      "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                    },
                     "createdBy": {
                       "id": 42,
                       "firstName": "James",
@@ -141753,7 +141729,7 @@
           }
         },
         "summary": "List my assigned tasks",
-        "description": "Returns open tasks assigned to the current user across all active projects. Includes tasks assigned via both legacy assignee field and multi-assignee relationships. Ordered by due date (soonest first, nulls last), then by priority. Accepts an optional limit parameter (default 10, max 50).",
+        "description": "Returns open tasks assigned to the current user across all active projects. Includes every task the user is one of the assignees of. Ordered by due date (soonest first, nulls last), then by priority. Accepts an optional limit parameter (default 10, max 50).",
         "parameters": [
           {
             "name": "page",
@@ -141904,33 +141880,6 @@
             "explode": true
           },
           {
-            "name": "assignee",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "string"
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
-            "name": "assignee[]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
-          },
-          {
             "name": "taskAssignees.user",
             "in": "query",
             "description": "",
@@ -142033,18 +141982,6 @@
                 "asc",
                 "desc"
               ]
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
-            "name": "exists[assignee]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "boolean"
             },
             "style": "form",
             "explode": false
@@ -142176,16 +142113,6 @@
                         "isClosed": true
                       },
                       "priority": 42,
-                      "assignee": {
-                        "@context": "string",
-                        "@id": "string",
-                        "@type": "string",
-                        "id": 42,
-                        "firstName": "James",
-                        "lastName": "Patterson",
-                        "fullName": "James Patterson",
-                        "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                      },
                       "createdBy": {
                         "@context": "string",
                         "@id": "string",
@@ -142277,13 +142204,6 @@
                       "isClosed": true
                     },
                     "priority": 42,
-                    "assignee": {
-                      "id": 42,
-                      "firstName": "James",
-                      "lastName": "Patterson",
-                      "fullName": "James Patterson",
-                      "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                    },
                     "createdBy": {
                       "id": 42,
                       "firstName": "James",
@@ -142377,13 +142297,6 @@
                       "isClosed": true
                     },
                     "priority": 42,
-                    "assignee": {
-                      "id": 42,
-                      "firstName": "James",
-                      "lastName": "Patterson",
-                      "fullName": "James Patterson",
-                      "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                    },
                     "createdBy": {
                       "id": 42,
                       "firstName": "James",
@@ -142594,33 +142507,6 @@
             "explode": true
           },
           {
-            "name": "assignee",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "string"
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
-            "name": "assignee[]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
-          },
-          {
             "name": "taskAssignees.user",
             "in": "query",
             "description": "",
@@ -142728,18 +142614,6 @@
             "explode": false
           },
           {
-            "name": "exists[assignee]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
             "name": "exists[taskAssignees]",
             "in": "query",
             "description": "",
@@ -142826,16 +142700,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "@context": "string",
                     "@id": "string",
@@ -142944,13 +142808,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -143059,13 +142916,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -143163,7 +143013,6 @@
                 "description": "Quarterly chapter meeting open to all members.",
                 "status": "/api/v1/issue_statuses/1",
                 "priority": 42,
-                "assignee": "/api/v1/users/1",
                 "dateDue": "2026-01-15T10:30:00+00:00",
                 "dateStart": "2026-01-15T10:30:00+00:00",
                 "position": 42,
@@ -143173,6 +143022,9 @@
                 "type": "/api/v1/issue_types/1",
                 "blockedBy": [
                   "/api/v1/tasks/1"
+                ],
+                "assignees": [
+                  "/api/v1/users/1"
                 ]
               }
             },
@@ -143187,7 +143039,6 @@
                 "description": "Quarterly chapter meeting open to all members.",
                 "status": "/api/v1/issue_statuses/1",
                 "priority": 42,
-                "assignee": "/api/v1/users/1",
                 "dateDue": "2026-01-15T10:30:00+00:00",
                 "dateStart": "2026-01-15T10:30:00+00:00",
                 "position": 42,
@@ -143197,6 +143048,9 @@
                 "type": "/api/v1/issue_types/1",
                 "blockedBy": [
                   "/api/v1/tasks/1"
+                ],
+                "assignees": [
+                  "/api/v1/users/1"
                 ]
               }
             },
@@ -143211,7 +143065,6 @@
                 "description": "Quarterly chapter meeting open to all members.",
                 "status": "/api/v1/issue_statuses/1",
                 "priority": 42,
-                "assignee": "/api/v1/users/1",
                 "dateDue": "2026-01-15T10:30:00+00:00",
                 "dateStart": "2026-01-15T10:30:00+00:00",
                 "position": 42,
@@ -143221,6 +143074,9 @@
                 "type": "/api/v1/issue_types/1",
                 "blockedBy": [
                   "/api/v1/tasks/1"
+                ],
+                "assignees": [
+                  "/api/v1/users/1"
                 ]
               }
             }
@@ -143291,16 +143147,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "@context": "string",
                     "@id": "string",
@@ -143409,13 +143255,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -143524,13 +143363,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -143723,16 +143555,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "@context": "string",
-                    "@id": "string",
-                    "@type": "string",
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "@context": "string",
                     "@id": "string",
@@ -143841,13 +143663,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -143956,13 +143771,6 @@
                     "isClosed": true
                   },
                   "priority": 42,
-                  "assignee": {
-                    "id": 42,
-                    "firstName": "James",
-                    "lastName": "Patterson",
-                    "fullName": "James Patterson",
-                    "logo": "https://cdn.orgo.space/tenants/acme/logo.png"
-                  },
                   "createdBy": {
                     "id": 42,
                     "firstName": "James",
@@ -144081,7 +143889,6 @@
                 "description": "Quarterly chapter meeting open to all members.",
                 "status": "/api/v1/issue_statuses/1",
                 "priority": 42,
-                "assignee": "/api/v1/users/1",
                 "dateDue": "2026-01-15T10:30:00+00:00",
                 "dateStart": "2026-01-15T10:30:00+00:00",
                 "position": 42,
@@ -144097,7 +143904,6 @@
                     "description": "Quarterly chapter meeting open to all members.",
                     "status": "/api/v1/issue_statuses/1",
                     "priority": 42,
-                    "assignee": "/api/v1/users/1",
                     "dateDue": "2026-01-15T10:30:00+00:00",
                     "dateStart": "2026-01-15T10:30:00+00:00",
                     "position": 42,
@@ -144109,6 +143915,9 @@
                       "/api/v1/tasks/1"
                     ]
                   }
+                ],
+                "assignees": [
+                  "/api/v1/users/1"
                 ]
               }
             }
@@ -144372,33 +144181,6 @@
             "explode": true
           },
           {
-            "name": "assignee",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "string"
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
-            "name": "assignee[]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "style": "form",
-            "explode": true
-          },
-          {
             "name": "taskAssignees.user",
             "in": "query",
             "description": "",
@@ -144501,18 +144283,6 @@
                 "asc",
                 "desc"
               ]
-            },
-            "style": "form",
-            "explode": false
-          },
-          {
-            "name": "exists[assignee]",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "deprecated": false,
-            "schema": {
-              "type": "boolean"
             },
             "style": "form",
             "explode": false
@@ -144742,7 +144512,7 @@
           }
         },
         "summary": "Add a comment to a task",
-        "description": "Posts a new top-level comment on a task. Supports HTML content (sanitized) and media attachments. Sends in-app notifications and emails to the task assignee and creator. Content is sanitized for UTF-8 encoding and XSS prevention.",
+        "description": "Posts a new top-level comment on a task. Supports HTML content (sanitized) and media attachments. Sends in-app notifications and emails to every assignee and the task creator, except the commenter. Content is sanitized for UTF-8 encoding and XSS prevention.",
         "parameters": [
           {
             "name": "uuid",
@@ -295637,14 +295407,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "example": "/api/v1/users/1",
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "iri-reference"
-          },
           "createdBy": {
             "example": "/api/v1/users/1",
             "type": [
@@ -295873,16 +295635,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/User-task_read"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "createdBy": {
             "anyOf": [
               {
@@ -296075,16 +295827,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/User-task_read_user_mini_issue_status_read"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "createdBy": {
             "anyOf": [
               {
@@ -296265,14 +296007,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "example": "/api/v1/users/1",
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "iri-reference"
-          },
           "dateDue": {
             "type": [
               "string",
@@ -296326,6 +296060,15 @@
             "items": {
               "$ref": "#/components/schemas/Task-task_write"
             }
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "iri-reference",
+              "example": "/api/v1/users/123"
+            },
+            "description": "The full list of assignees as user IRIs. It replaces the current list: send everyone who should stay assigned, or an empty array to unassign all. Users outside the tenant are ignored. Newly added users get a \"task assigned\" email."
           }
         }
       },
@@ -296369,14 +296112,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "example": "/api/v1/users/1",
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "iri-reference"
-          },
           "dateDue": {
             "type": [
               "string",
@@ -296430,6 +296165,15 @@
             "items": {
               "$ref": "#/components/schemas/Task-task_write"
             }
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "iri-reference",
+              "example": "/api/v1/users/123"
+            },
+            "description": "The full list of assignees as user IRIs. It replaces the current list: send everyone who should stay assigned, or an empty array to unassign all. Users outside the tenant are ignored. Newly added users get a \"task assigned\" email."
           }
         }
       },
@@ -297482,14 +297226,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "example": "/api/v1/users/1",
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "iri-reference"
-          },
           "createdBy": {
             "example": "/api/v1/users/1",
             "type": [
@@ -297718,16 +297454,6 @@
               "null"
             ]
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/User.multipart-task_read"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "createdBy": {
             "anyOf": [
               {
@@ -297918,16 +297644,6 @@
             "type": [
               "integer",
               "null"
-            ]
-          },
-          "assignee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/User.multipart-task_read_user_mini_issue_status_read"
-              },
-              {
-                "type": "null"
-              }
             ]
           },
           "createdBy": {
