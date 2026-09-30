@@ -5495,7 +5495,7 @@
     "path": "/api/v1/my-tasks",
     "tag": "Task",
     "summary": "List my assigned tasks",
-    "description": "Returns open tasks assigned to the current user across all active projects. Includes tasks assigned via both legacy assignee field and multi-assignee relationships. Ordered by due date (soonest first, nulls last), then by priority. Accepts an optional limit parameter (default 10, max 50).",
+    "description": "Returns open tasks assigned to the current user across all active projects. Includes every task the user is one of the assignees of. Ordered by due date (soonest first, nulls last), then by priority. Accepts an optional limit parameter (default 10, max 50).",
     "hasBody": false,
     "deprecated": false
   },
@@ -5565,7 +5565,7 @@
     "path": "/api/v1/tasks/{uuid}/comments",
     "tag": "Task",
     "summary": "Add a comment to a task",
-    "description": "Posts a new top-level comment on a task. Supports HTML content (sanitized) and media attachments. Sends in-app notifications and emails to the task assignee and creator. Content is sanitized for UTF-8 encoding and XSS prevention.",
+    "description": "Posts a new top-level comment on a task. Supports HTML content (sanitized) and media attachments. Sends in-app notifications and emails to every assignee and the task creator, except the commenter. Content is sanitized for UTF-8 encoding and XSS prevention.",
     "hasBody": true,
     "deprecated": false
   },
