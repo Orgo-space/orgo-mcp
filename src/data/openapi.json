@@ -185897,6 +185897,152 @@
         }
       }
     },
+    "/api/v1/vote_collections/{id}/electorate": {
+      "get": {
+        "operationId": "electorate",
+        "tags": [
+          "VoteCollection"
+        ],
+        "responses": {
+          "200": {
+            "description": "The voter list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "frozenAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the list was frozen; null while it is still live."
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "perPage": {
+                      "type": "integer"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "firstName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lastName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "email": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "companyName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Live: the company represented now (first by name). Frozen: the company recorded when the vote started."
+                          },
+                          "hasVoted": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "frozenAt": "2026-10-05T09:17:13+00:00",
+                  "total": 2,
+                  "page": 1,
+                  "perPage": 50,
+                  "items": [
+                    {
+                      "userId": 42,
+                      "firstName": "Ana",
+                      "lastName": "Popescu",
+                      "email": "ana@acme.example",
+                      "companyName": "Acme Logistics",
+                      "hasVoted": true
+                    },
+                    {
+                      "userId": 43,
+                      "firstName": "Bogdan",
+                      "lastName": "Ionescu",
+                      "email": "bogdan@northwind.example",
+                      "companyName": "Northwind Trading",
+                      "hasVoted": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The vote has no company-representatives electorate",
+            "links": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "links": {}
+          },
+          "404": {
+            "description": "Not found",
+            "links": {}
+          }
+        },
+        "summary": "List the voters of a company-representatives vote",
+        "description": "For a vote whose `electorate` is `company_voting_representatives`: the voter list.\n\nUntil the vote starts the list is live, recomputed on every read: the active voting representative (user account) of every ACTIVE company of the organisation whose fee is paid through the vote's start date. When the vote starts it is frozen once into the vote's voters and never changes again; `frozenAt` then carries the moment, and each row the company recorded at that moment and whether the person has voted.\n\nA person representing two companies is one voter. Paginated, 50 rows per page. Requires ownership of the vote or HR_LOCAL permission. Returns 400 for a vote with any other electorate.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "VoteCollection identifier",
+            "required": true,
+            "deprecated": false,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple",
+            "explode": false
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number, 50 rows per page",
+            "required": false,
+            "deprecated": false,
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "style": "form",
+            "explode": false
+          }
+        ]
+      }
+    },
     "/api/v1/vote_collections/{id}/export": {
       "get": {
         "operationId": "export",
@@ -339515,6 +339661,26 @@
               }
             ]
           },
+          "electorate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "company_voting_representatives",
+              null
+            ],
+            "description": "Who may vote, when not an event, group or hand-picked vote. `company_voting_representatives`: the voting representative of every ACTIVE company paid through the start date; live until the start, then frozen. Tenant admins only; cannot be combined with `isGeneral`, `unit` or `event`; cannot change once published. Voters of such a vote cannot be added or removed by hand."
+          },
+          "electorateFrozenAt": {
+            "readOnly": true,
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the electorate was frozen into the vote's voters; null while it is still live."
+          },
           "totalVoted": {
             "default": 0,
             "type": [
@@ -339706,6 +339872,17 @@
             ],
             "format": "iri-reference"
           },
+          "electorate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "company_voting_representatives",
+              null
+            ],
+            "description": "Who may vote, when not an event, group or hand-picked vote. `company_voting_representatives`: the voting representative of every ACTIVE company paid through the start date; live until the start, then frozen. Tenant admins only; cannot be combined with `isGeneral`, `unit` or `event`; cannot change once published. Voters of such a vote cannot be added or removed by hand."
+          },
           "status": {
             "readOnly": true,
             "type": [
@@ -339814,6 +339991,17 @@
               "null"
             ],
             "format": "iri-reference"
+          },
+          "electorate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "company_voting_representatives",
+              null
+            ],
+            "description": "Who may vote, when not an event, group or hand-picked vote. `company_voting_representatives`: the voting representative of every ACTIVE company paid through the start date; live until the start, then frozen. Tenant admins only; cannot be combined with `isGeneral`, `unit` or `event`; cannot change once published. Voters of such a vote cannot be added or removed by hand."
           },
           "status": {
             "readOnly": true,
@@ -339943,6 +340131,26 @@
                     "type": "null"
                   }
                 ]
+              },
+              "electorate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "company_voting_representatives",
+                  null
+                ],
+                "description": "Who may vote, when not an event, group or hand-picked vote. `company_voting_representatives`: the voting representative of every ACTIVE company paid through the start date; live until the start, then frozen. Tenant admins only; cannot be combined with `isGeneral`, `unit` or `event`; cannot change once published. Voters of such a vote cannot be added or removed by hand."
+              },
+              "electorateFrozenAt": {
+                "readOnly": true,
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "When the electorate was frozen into the vote's voters; null while it is still live."
               },
               "totalVoted": {
                 "default": 0,
@@ -340151,6 +340359,26 @@
                 "type": "null"
               }
             ]
+          },
+          "electorate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "company_voting_representatives",
+              null
+            ],
+            "description": "Who may vote, when not an event, group or hand-picked vote. `company_voting_representatives`: the voting representative of every ACTIVE company paid through the start date; live until the start, then frozen. Tenant admins only; cannot be combined with `isGeneral`, `unit` or `event`; cannot change once published. Voters of such a vote cannot be added or removed by hand."
+          },
+          "electorateFrozenAt": {
+            "readOnly": true,
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the electorate was frozen into the vote's voters; null while it is still live."
           },
           "totalVoted": {
             "default": 0,
@@ -340481,6 +340709,14 @@
               "string",
               "null"
             ]
+          },
+          "companyName": {
+            "readOnly": true,
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a company-representatives vote: the company this voter represented when the vote started."
           }
         }
       },
@@ -340551,6 +340787,14 @@
                   "string",
                   "null"
                 ]
+              },
+              "companyName": {
+                "readOnly": true,
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "For a company-representatives vote: the company this voter represented when the vote started."
               }
             }
           }
@@ -340592,6 +340836,14 @@
               "string",
               "null"
             ]
+          },
+          "companyName": {
+            "readOnly": true,
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a company-representatives vote: the company this voter represented when the vote started."
           }
         }
       },
