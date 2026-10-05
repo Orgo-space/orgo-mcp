@@ -6840,6 +6840,16 @@
     "deprecated": false
   },
   {
+    "operationId": "electorate",
+    "method": "GET",
+    "path": "/api/v1/vote_collections/{id}/electorate",
+    "tag": "VoteCollection",
+    "summary": "List the voters of a company-representatives vote",
+    "description": "For a vote whose `electorate` is `company_voting_representatives`: the voter list.\n\nUntil the vote starts the list is live, recomputed on every read: the active voting representative (user account) of every ACTIVE company of the organisation whose fee is paid through the vote's start date. When the vote starts it is frozen once into the vote's voters and never changes again; `frozenAt` then carries the moment, and each row the company recorded at that moment and whether the person has voted.\n\nA person representing two companies is one voter. Paginated, 50 rows per page. Requires ownership of the vote or HR_LOCAL permission. Returns 400 for a vote with any other electorate.",
+    "hasBody": false,
+    "deprecated": false
+  },
+  {
     "operationId": "export",
     "method": "GET",
     "path": "/api/v1/vote_collections/{id}/export",
